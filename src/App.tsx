@@ -78,6 +78,11 @@ export const App: React.FC = () => {
       explanation: 'Giải thích nghĩa chi tiết',
       example: 'Example sentence in English.',
       exampleMeaning: 'Bản dịch ví dụ tiếng Việt.',
+      enableInteractive: true,
+      interactiveQuestion: 'Vậy "Cho tôi mượn" tiếng Anh là gì?',
+      interactiveVoiceText: 'Vậy câu cho tôi mượn tiếng Anh là gì? Bạn hãy bình luận đáp án bên dưới nhé!',
+      interactivePrompt: 'Bình luận đáp án của bạn bên dưới nhé! 👇',
+      interactiveDurationSeconds: 4,
     };
 
     setQuizList((prev) => [...prev, newQuiz]);

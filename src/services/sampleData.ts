@@ -27,7 +27,12 @@ export const SAMPLE_QUIZ_LIST: QuizItem[] = [
     note: 'Good ≠ Goods',
     explanation: 'Goods = Hàng hóa (Danh từ số nhiều)',
     example: 'The company produces high-tech goods.',
-    exampleMeaning: 'Công ty sản xuất các mặt hàng công nghệ cao.'
+    exampleMeaning: 'Công ty sản xuất các mặt hàng công nghệ cao.',
+    enableInteractive: true,
+    interactiveQuestion: 'Vậy "Tôi muốn lựa chọn một hàng hóa tốt" tiếng Anh là gì?',
+    interactiveVoiceText: 'Vậy câu tôi muốn lựa chọn một hàng hóa tốt trong tiếng Anh là gì? Bạn hãy bình luận đáp án bên dưới nhé!',
+    interactivePrompt: 'Bình luận đáp án của bạn bên dưới nhé! 👇',
+    interactiveDurationSeconds: 4,
   },
   {
     id: 'quiz-2',
@@ -53,7 +58,12 @@ export const SAMPLE_QUIZ_LIST: QuizItem[] = [
     note: 'Desert (1 chữ S) = Sa mạc | Dessert (2 chữ S) = Tráng miệng',
     explanation: 'Dessert = Món tráng miệng (Bánh ngọt, kem, hoa quả)',
     example: 'What would you like for dessert?',
-    exampleMeaning: 'Bạn muốn dùng món gì cho tráng miệng?'
+    exampleMeaning: 'Bạn muốn dùng món gì cho tráng miệng?',
+    enableInteractive: true,
+    interactiveQuestion: 'Vậy từ "Sa mạc Sahara" trong tiếng Anh viết có mấy chữ S?',
+    interactiveVoiceText: 'Vậy từ Sa mạc Sahara trong tiếng Anh viết có mấy chữ S? Hãy viết bình luận xem bạn có nhớ không nào!',
+    interactivePrompt: 'Viết bình luận xem bạn có nhớ không nào! 👇',
+    interactiveDurationSeconds: 4,
   },
   {
     id: 'quiz-3',
@@ -79,7 +89,12 @@ export const SAMPLE_QUIZ_LIST: QuizItem[] = [
     note: 'Compliment (chữ i) = Lời khen | Complement (chữ e) = Bổ sung',
     explanation: 'Compliment = Lời khen, lời ca ngợi',
     example: 'He gave her a nice compliment on her presentation.',
-    exampleMeaning: 'Anh ấy đã dành cho cô ấy một lời khen ngợi về bài thuyết trình.'
+    exampleMeaning: 'Anh ấy đã dành cho cô ấy một lời khen ngợi về bài thuyết trình.',
+    enableInteractive: true,
+    interactiveQuestion: 'Bạn thường nói câu gì để "khen ngợi một người bạn" bằng tiếng Anh?',
+    interactiveVoiceText: 'Bạn thường dùng câu gì để khen ngợi một người bạn bằng tiếng Anh? Hãy chia sẻ ở phần bình luận nhé!',
+    interactivePrompt: 'Chia sẻ câu của bạn ở phần bình luận nhé! 💬',
+    interactiveDurationSeconds: 4,
   },
   {
     id: 'quiz-4',
@@ -105,7 +120,12 @@ export const SAMPLE_QUIZ_LIST: QuizItem[] = [
     note: 'Danh từ: Con gấu | Động từ: Chịu đựng, sinh con',
     explanation: 'Bear (v) = Chịu đựng (I can\'t bear it) hoặc Sinh con (Bear a child)',
     example: 'She couldn\'t bear the pain any longer.',
-    exampleMeaning: 'Cô ấy không thể chịu đựng cơn đau thêm được nữa.'
+    exampleMeaning: 'Cô ấy không thể chịu đựng cơn đau thêm được nữa.',
+    enableInteractive: true,
+    interactiveQuestion: 'Câu "I can\'t bear this hot weather" dịch chuẩn sang tiếng Việt là gì?',
+    interactiveVoiceText: 'Câu I can not bear this hot weather dịch chuẩn sang tiếng Việt là gì? Thử tài dịch câu này ở phần bình luận xem sao!',
+    interactivePrompt: 'Thử tài dịch câu này ở phần bình luận xem sao! 👇',
+    interactiveDurationSeconds: 4,
   },
   {
     id: 'quiz-5',
@@ -131,7 +151,12 @@ export const SAMPLE_QUIZ_LIST: QuizItem[] = [
     note: 'Everyday (dính liền) = Tính từ | Every day (cách rời) = Trạng từ',
     explanation: 'Everyday (adj) đứng trước danh từ: everyday life = cuộc sống thường ngày',
     example: 'Traffic jams are an everyday problem in the city.',
-    exampleMeaning: 'Kẹt xe là vấn đề thường ngày ở thành phố.'
+    exampleMeaning: 'Kẹt xe là vấn đề thường ngày ở thành phố.',
+    enableInteractive: true,
+    interactiveQuestion: 'Điền vào chỗ trống: "I practice English ___ (Everyday hay Every day)?"',
+    interactiveVoiceText: 'Hãy điền vào chỗ trống, I practice English, Everyday dính liền hay Every day cách rời? Comment đáp án của bạn nào!',
+    interactivePrompt: 'Comment đáp án chuẩn xác của bạn nào! 🎯',
+    interactiveDurationSeconds: 4,
   }
 ];
 

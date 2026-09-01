@@ -24,6 +24,15 @@ export interface QuizItem {
   explanation: string; // e.g. "Goods = Hàng hóa (Danh từ)"
   example?: string; // e.g. "The company produces electronic goods."
   exampleMeaning?: string; // e.g. "Công ty sản xuất các mặt hàng điện tử."
+  // Interactive audience engagement question (Call-to-Action)
+  enableInteractive?: boolean; // Toggle interactive question phase
+  interactiveQuestion?: string; // Text displayed on screen (e.g. "Vậy 'Cho tôi mượn' tiếng Anh là gì?")
+  interactiveVoiceText?: string; // Text spoken by Vietnamese voice (e.g. "Vậy câu cho tôi mượn tiếng Anh là gì? Bình luận nhé")
+  interactivePrompt?: string; // e.g. "Bình luận đáp án của bạn bên dưới nhé! 👇"
+  interactiveDurationSeconds?: number; // Duration in seconds (default: 4)
+  interactiveVoiceSpeed?: number; // Voice playback speed: 0.8x to 1.5x (default: 1.05)
+  interactiveVoicePitch?: number; // Voice pitch multiplier: 0.85 to 1.25 (default: 1.0)
+  interactiveVoiceStyle?: 'standard' | 'viral' | 'deep' | 'fast'; // Preset voice style
 }
 
 export interface ThemeConfig {

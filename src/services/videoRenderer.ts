@@ -424,6 +424,15 @@ export class VideoRenderer {
     this.drawBackground();
 
     const countdownTotal = quiz.countdownSeconds || 5;
+    const revealDuration = quiz.revealDurationSeconds || 4;
+    const hasInteractive = quiz.enableInteractive !== false && !!(quiz.interactiveQuestion || quiz.interactiveVoiceText)?.trim();
+    const isInteractiveStage = hasInteractive && currentTime >= (countdownTotal + revealDuration);
+
+    if (isInteractiveStage) {
+      this.drawInteractiveStage(quiz, currentTime, countdownTotal, revealDuration, isVip);
+      return;
+    }
+
     const isRevealed = currentTime >= countdownTotal;
     const remainingTime = Math.max(0, countdownTotal - currentTime);
 
@@ -807,22 +816,232 @@ export class VideoRenderer {
   }
 
   /**
+   * Render the Interactive Audience Engagement Stage (Call-To-Action Question)
+   */
+  private drawInteractiveStage(
+    quiz: QuizItem,
+    currentTime: number,
+    countdownTotal: number,
+    revealDuration: number,
+    isVip: boolean = false
+  ) {
+    const elapsedInStage = currentTime - (countdownTotal + revealDuration);
+    const entryProgress = Math.min(1, elapsedInStage / 0.4);
+
+    // 1. Channel Logo & Channel Header
+    this.drawChannelLogo(quiz);
+
+    const isTopLeftWithText = quiz.channelLogo && (quiz.logoPosition === 'top-left' || !quiz.logoPosition) && quiz.showLogoText !== false && !!quiz.channelName;
+    const hasTopCenterLogo = quiz.channelLogo && quiz.logoPosition === 'top-center';
+    const channelTitle = quiz.channelName || 'BIN HỌC TIẾNG ANH';
+
+    this.ctx.save();
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+
+    if (!isTopLeftWithText) {
+      const channelHeaderY = hasTopCenterLogo ? 165 : 125;
+      this.ctx.font = '700 30px "Outfit", "Inter", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+      this.ctx.letterSpacing = '5px';
+      this.ctx.fillText(channelTitle.toUpperCase(), this.width / 2, channelHeaderY);
+    }
+
+    // 2. Top Interactive Header Badge
+    const badgeY = isTopLeftWithText ? 245 : hasTopCenterLogo ? 225 : 185;
+    const badgeText = '🔥 THỬ THÁCH KHÁN GIẢ 🔥';
+    this.ctx.font = '800 24px "Outfit", "Inter", sans-serif';
+    this.ctx.letterSpacing = '3px';
+    const bTextW = this.ctx.measureText(badgeText).width;
+    const bPadX = 32;
+    const bH = 48;
+
+    this.drawRoundedRect(
+      this.width / 2 - bTextW / 2 - bPadX,
+      badgeY - bH / 2,
+      bTextW + bPadX * 2,
+      bH,
+      24,
+      'rgba(245, 158, 11, 0.18)',
+      'rgba(245, 158, 11, 0.65)',
+      2
+    );
+    this.ctx.fillStyle = '#fbbf24';
+    this.ctx.fillText(badgeText, this.width / 2, badgeY);
+    this.ctx.restore();
+
+    // 3. Main Glassmorphic Interactive Card
+    const cardStartX = 90;
+    const cardWidth = this.width - cardStartX * 2; // 900px
+    const cardY = badgeY + 65;
+    const cardHeight = 640;
+
+    this.ctx.save();
+    this.ctx.globalAlpha = entryProgress;
+
+    // Pop scale entry animation
+    const scale = 0.96 + entryProgress * 0.04;
+    const centerX = this.width / 2;
+    const centerY = cardY + cardHeight / 2;
+    this.ctx.translate(centerX, centerY);
+    this.ctx.scale(scale, scale);
+    this.ctx.translate(-centerX, -centerY);
+
+    // Glowing border for main question card
+    this.ctx.shadowColor = 'rgba(56, 189, 248, 0.4)';
+    this.ctx.shadowBlur = 30;
+
+    // Card Gradient Background
+    const cardGrad = this.ctx.createLinearGradient(cardStartX, cardY, cardStartX + cardWidth, cardY + cardHeight);
+    cardGrad.addColorStop(0, 'rgba(15, 23, 42, 0.88)');
+    cardGrad.addColorStop(1, 'rgba(30, 41, 59, 0.92)');
+
+    this.drawRoundedRect(
+      cardStartX,
+      cardY,
+      cardWidth,
+      cardHeight,
+      32,
+      cardGrad,
+      'rgba(56, 189, 248, 0.6)',
+      3
+    );
+    this.ctx.shadowBlur = 0; // reset glow
+
+    // Sub-title inside card: "CÂU HỎI DÀNH CHO BẠN:"
+    const headerInsideY = cardY + 65;
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.font = '800 24px "Outfit", "Inter", sans-serif';
+    this.ctx.letterSpacing = '3px';
+    this.ctx.fillStyle = '#38bdf8';
+    this.ctx.fillText('💬 CÂU HỎI DÀNH CHO BẠN:', this.width / 2, headerInsideY);
+
+    // Subtle divider line
+    this.ctx.beginPath();
+    this.ctx.moveTo(cardStartX + 120, headerInsideY + 36);
+    this.ctx.lineTo(cardStartX + cardWidth - 120, headerInsideY + 36);
+    this.ctx.strokeStyle = 'rgba(56, 189, 248, 0.25)';
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+
+    // Main Question Text (Auto-wrapped and auto-sized)
+    const questionText = (quiz.interactiveQuestion || quiz.interactiveVoiceText || '').trim();
+    const maxQWidth = cardWidth - 100; // 800px
+    let qFontSize = 54;
+    if (questionText.length > 90) qFontSize = 44;
+    if (questionText.length > 150) qFontSize = 38;
+
+    const qFont = `800 ${qFontSize}px "Outfit", "Inter", sans-serif`;
+    const qLineHeight = qFontSize + 18;
+
+    const qLines = this.getWrappedLines(questionText, maxQWidth, qFont);
+    const totalTextH = qLines.length * qLineHeight;
+    const textStartY = cardY + 120 + (cardHeight - 160 - totalTextH) / 2 + qLineHeight / 2;
+
+    this.ctx.font = qFont;
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.letterSpacing = '0.5px';
+
+    qLines.forEach((line, idx) => {
+      this.ctx.fillText(line, this.width / 2, textStartY + idx * qLineHeight);
+    });
+
+    this.ctx.restore();
+
+    // 4. Call-to-Action (CTA) Banner Below
+    const ctaY = cardY + cardHeight + 45;
+    const ctaPrompt = quiz.interactivePrompt || 'Bình luận đáp án của bạn bên dưới nhé! 👇';
+    const pulse = 1 + Math.sin(currentTime * 4) * 0.02;
+
+    this.ctx.save();
+    this.ctx.globalAlpha = entryProgress;
+    this.ctx.translate(this.width / 2, ctaY + 45);
+    this.ctx.scale(pulse, pulse);
+    this.ctx.translate(-this.width / 2, -(ctaY + 45));
+
+    const ctaH = 90;
+    this.ctx.shadowColor = 'rgba(34, 197, 94, 0.5)';
+    this.ctx.shadowBlur = 24;
+
+    const ctaGrad = this.ctx.createLinearGradient(cardStartX, ctaY, cardStartX + cardWidth, ctaY + ctaH);
+    ctaGrad.addColorStop(0, 'rgba(22, 101, 52, 0.9)');
+    ctaGrad.addColorStop(1, 'rgba(5, 150, 105, 0.9)');
+
+    this.drawRoundedRect(
+      cardStartX,
+      ctaY,
+      cardWidth,
+      ctaH,
+      28,
+      ctaGrad,
+      'rgba(74, 222, 128, 0.8)',
+      3
+    );
+    this.ctx.shadowBlur = 0;
+
+    // CTA Text
+    this.ctx.font = '800 36px "Outfit", "Inter", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.fillText(ctaPrompt, this.width / 2, ctaY + ctaH / 2);
+    this.ctx.restore();
+
+    // 5. Bottom Extra Engagement Tip
+    this.ctx.save();
+    this.ctx.globalAlpha = Math.min(1, Math.max(0, (elapsedInStage - 0.3) / 0.5));
+    this.ctx.font = '600 28px "Outfit", sans-serif';
+    this.ctx.fillStyle = 'rgba(224, 242, 254, 0.75)';
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.fillText('⚡ Xem ai là người đầu tiên trả lời chính xác nhất! 🏆', this.width / 2, ctaY + ctaH + 65);
+    this.ctx.restore();
+
+    // 6. Watermark for Free Plan
+    if (!isVip) {
+      this.ctx.save();
+      this.ctx.textAlign = 'right';
+      this.ctx.textBaseline = 'bottom';
+      this.ctx.font = '600 24px "Outfit", "Inter", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+      this.ctx.letterSpacing = '1px';
+      this.ctx.fillText('⚡ Tạo bởi QuizVideo Studio (Bản Miễn Phí)', this.width - 60, this.height - 40);
+      this.ctx.restore();
+    }
+  }
+
+  /**
    * Export video as WebM / MP4 using MediaRecorder with full synchronized audio
    */
   public async exportVideo(
     quiz: QuizItem,
     audioStream: MediaStream | null,
     onProgress: (progress: number) => void,
-    isVip: boolean = false
+    isVip: boolean = false,
+    interactiveBufferDuration?: number
   ): Promise<Blob> {
     const countdown = quiz.countdownSeconds || 5;
     const reveal = quiz.revealDurationSeconds || 4;
-    const totalDuration = countdown + reveal;
+    const hasInteractive = quiz.enableInteractive !== false && !!(quiz.interactiveQuestion || quiz.interactiveVoiceText)?.trim();
+    const speed = quiz.interactiveVoiceSpeed || 1.05;
+    const effectiveVoiceDuration = interactiveBufferDuration && interactiveBufferDuration > 0
+      ? (interactiveBufferDuration / speed)
+      : 0;
+    const minVoiceDuration = effectiveVoiceDuration > 0
+      ? Math.ceil(effectiveVoiceDuration + 0.8)
+      : 0;
+    const configuredInteractive = quiz.interactiveDurationSeconds || 4;
+    const interactive = hasInteractive ? Math.max(configuredInteractive, minVoiceDuration) : 0;
+    const totalDuration = countdown + reveal + interactive;
     const fps = 60;
 
     // Prepare canvas video stream
     const canvasStream = this.canvas.captureStream(fps);
-    const combinedTracks: MediaStreamTrack[] = [...canvasStream.getVideoTracks()];
+    const videoTrack = canvasStream.getVideoTracks()[0];
+    const combinedTracks: MediaStreamTrack[] = videoTrack ? [videoTrack] : [];
 
     if (audioStream) {
       const audioTracks = audioStream.getAudioTracks();
@@ -881,6 +1100,9 @@ export class VideoRenderer {
         const currentTime = Math.min(totalDuration, elapsedMs / 1000);
 
         this.renderFrame(quiz, currentTime, isVip);
+        if ((videoTrack as any)?.requestFrame) {
+          try { (videoTrack as any).requestFrame(); } catch {}
+        }
 
         const progressPercent = Math.min(100, Math.round((currentTime / totalDuration) * 100));
         onProgress(progressPercent);
@@ -890,11 +1112,14 @@ export class VideoRenderer {
         } else {
           // Final frame render
           this.renderFrame(quiz, totalDuration, isVip);
+          if ((videoTrack as any)?.requestFrame) {
+            try { (videoTrack as any).requestFrame(); } catch {}
+          }
           setTimeout(() => {
             if (mediaRecorder.state !== 'inactive') {
               mediaRecorder.stop();
             }
-          }, 80);
+          }, 150);
         }
       };
 

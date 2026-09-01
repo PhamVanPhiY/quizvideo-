@@ -5,9 +5,11 @@ class AudioEngine {
   private ctx: AudioContext | null = null;
   private streamDest: MediaStreamAudioDestinationNode | null = null;
   private masterGain: GainNode | null = null;
+  private speakerGain: GainNode | null = null;
   private sfxGain: GainNode | null = null;
   private voices: SpeechSynthesisVoice[] = [];
   private isMuted: boolean = false;
+  private isSpeakerMutedForExport: boolean = false;
   private audioBufferCache: Map<string, AudioBuffer> = new Map();
 
   constructor() {
@@ -20,16 +22,23 @@ class AudioEngine {
       this.ctx = new AudioCtx();
       this.streamDest = this.ctx.createMediaStreamDestination();
       this.masterGain = this.ctx.createGain();
+      this.speakerGain = this.ctx.createGain();
       this.sfxGain = this.ctx.createGain();
 
-      this.masterGain.gain.setValueAtTime(0.9, this.ctx.currentTime);
+      this.masterGain.gain.setValueAtTime(0.95, this.ctx.currentTime);
+      this.speakerGain.gain.setValueAtTime(this.isMuted ? 0 : 0.95, this.ctx.currentTime);
       this.sfxGain.gain.setValueAtTime(0.9, this.ctx.currentTime);
 
       this.sfxGain.connect(this.masterGain);
-      this.masterGain.connect(this.ctx.destination);
+      
+      // 1. masterGain feeds directly into recording stream (always 100% audio captured for exported video)
       if (this.streamDest) {
         this.masterGain.connect(this.streamDest);
       }
+
+      // 2. masterGain feeds into speakerGain -> ctx.destination for live speaker audio
+      this.masterGain.connect(this.speakerGain);
+      this.speakerGain.connect(this.ctx.destination);
     }
     if (this.ctx.state === 'suspended') {
       this.ctx.resume();
@@ -46,16 +55,31 @@ class AudioEngine {
     return this.streamDest!.stream;
   }
 
+  public setSpeakerMutedForExport(muted: boolean) {
+    this.isSpeakerMutedForExport = muted;
+    this.initContext();
+    if (this.speakerGain && this.ctx) {
+      if (muted) {
+        this.speakerGain.gain.setValueAtTime(0, this.ctx.currentTime);
+      } else {
+        this.speakerGain.gain.setValueAtTime(this.isMuted ? 0 : 0.95, this.ctx.currentTime);
+      }
+    }
+  }
+
   public setVolume(volume: number) {
     this.initContext();
-    if (this.sfxGain && this.ctx) {
-      this.sfxGain.gain.setValueAtTime(Math.max(0, Math.min(1, volume)), this.ctx.currentTime);
+    if (this.speakerGain && this.ctx) {
+      this.speakerGain.gain.setValueAtTime(Math.max(0, Math.min(1, volume)), this.ctx.currentTime);
     }
   }
 
   public setMute(muted: boolean) {
     this.isMuted = muted;
-    this.setVolume(muted ? 0 : 0.9);
+    this.initContext();
+    if (this.speakerGain && this.ctx) {
+      this.speakerGain.gain.setValueAtTime(muted || this.isSpeakerMutedForExport ? 0 : 0.95, this.ctx.currentTime);
+    }
   }
 
   // ==========================================
@@ -67,8 +91,11 @@ class AudioEngine {
     let cleanText = text.trim();
     if (!cleanText) return null;
 
-    // Convert ALL CAPS words (e.g. "GOODS") to lowercase so TTS pronounces it as a word rather than spelling out letters!
-    if (cleanText === cleanText.toUpperCase() && /[A-Z]/.test(cleanText)) {
+    // For Vietnamese text, remove double quotes, curly quotes, parentheses so Google TTS reads naturally
+    if (lang === 'vi' || lang.startsWith('vi')) {
+      cleanText = cleanText.replace(/["“”'‘’«»[\]()]/g, ' ').replace(/\s+/g, ' ').trim();
+    } else if (lang === 'en' && cleanText === cleanText.toUpperCase() && /[A-Z]/.test(cleanText)) {
+      // Convert ALL CAPS English words (e.g. "GOODS") to lowercase so TTS pronounces it as a word rather than spelling out letters!
       cleanText = cleanText.toLowerCase();
     }
 
@@ -118,14 +145,27 @@ class AudioEngine {
     return null;
   }
 
-  public playAudioBuffer(buffer: AudioBuffer, startTime: number = 0): AudioBufferSourceNode | null {
-    if (this.isMuted) return null;
+  public playAudioBuffer(
+    buffer: AudioBuffer,
+    startTime: number = 0,
+    playbackRate: number = 1.0,
+    pitchDetune: number = 0
+  ): AudioBufferSourceNode | null {
     const ctx = this.initContext();
     const source = ctx.createBufferSource();
     source.buffer = buffer;
-    source.connect(this.masterGain!);
 
     const targetTime = startTime > 0 ? startTime : ctx.currentTime;
+
+    if (playbackRate && playbackRate !== 1.0) {
+      source.playbackRate.setValueAtTime(Math.max(0.5, Math.min(2.0, playbackRate)), targetTime);
+    }
+
+    if (pitchDetune && pitchDetune !== 0) {
+      source.detune.setValueAtTime(Math.max(-1200, Math.min(1200, pitchDetune)), targetTime);
+    }
+
+    source.connect(this.masterGain!);
     source.start(targetTime);
     return source;
   }
@@ -160,6 +200,13 @@ class AudioEngine {
     if (this.isMuted) return;
     const ctx = this.initContext();
     this.scheduleWhoosh(ctx.currentTime);
+  }
+
+  // 5. Interactive Pop / Attention Sound (Âm thanh chuyển cảnh câu hỏi tương tác)
+  public playPop() {
+    if (this.isMuted) return;
+    const ctx = this.initContext();
+    this.schedulePop(ctx.currentTime);
   }
 
   // ==========================================
@@ -262,7 +309,38 @@ class AudioEngine {
     noise.stop(time + 0.25);
   }
 
-  // 5. Ambient Suspense Beat
+  // 5. Interactive Pop / Notification Chime (2-tone pleasant pop)
+  public schedulePop(time: number) {
+    if (!this.ctx || !this.sfxGain) return;
+
+    // Double rising tone: G5 (784Hz) -> C6 (1046Hz)
+    const tones = [
+      { freq: 784, offset: 0, dur: 0.12 },
+      { freq: 1046.5, offset: 0.08, dur: 0.35 }
+    ];
+
+    tones.forEach(({ freq, offset, dur }) => {
+      if (!this.ctx || !this.sfxGain) return;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      const t = time + offset;
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, t);
+
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.35, t + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+      osc.connect(gain);
+      gain.connect(this.sfxGain);
+
+      osc.start(t);
+      osc.stop(t + dur);
+    });
+  }
+
+  // 6. Ambient Suspense Beat
   public scheduleAmbientTrack(startTime: number, duration: number) {
     if (!this.ctx || !this.sfxGain) return;
 
@@ -290,17 +368,28 @@ class AudioEngine {
   /**
    * Preload all voice AudioBuffers before starting recording
    */
-  public async preloadQuizAudio(quiz: QuizItem): Promise<{ wordBuffer: AudioBuffer | null; exampleBuffer: AudioBuffer | null }> {
+  public async preloadQuizAudio(quiz: QuizItem): Promise<{
+    wordBuffer: AudioBuffer | null;
+    exampleBuffer: AudioBuffer | null;
+    interactiveBuffer: AudioBuffer | null;
+  }> {
     const wordBufferPromise = this.getVoiceAudioBuffer(quiz.word, 'en');
     const exampleText = quiz.example || quiz.explanation || '';
     const exampleBufferPromise = this.getVoiceAudioBuffer(exampleText, 'en');
 
-    const [wordBuffer, exampleBuffer] = await Promise.all([
+    const voiceText = (quiz.interactiveVoiceText || quiz.interactiveQuestion || '').trim();
+    const hasInteractive = quiz.enableInteractive !== false && !!voiceText;
+    const interactivePromise = hasInteractive
+      ? this.getVoiceAudioBuffer(voiceText, 'vi')
+      : Promise.resolve(null);
+
+    const [wordBuffer, exampleBuffer, interactiveBuffer] = await Promise.all([
       wordBufferPromise,
       exampleBufferPromise,
+      interactivePromise,
     ]);
 
-    return { wordBuffer, exampleBuffer };
+    return { wordBuffer, exampleBuffer, interactiveBuffer };
   }
 
   /**
@@ -310,9 +399,11 @@ class AudioEngine {
     quiz: QuizItem,
     startTime: number,
     wordBuffer: AudioBuffer | null,
-    exampleBuffer: AudioBuffer | null
+    exampleBuffer: AudioBuffer | null,
+    interactiveBuffer: AudioBuffer | null = null
   ) {
     const countdownSeconds = quiz.countdownSeconds || 5;
+    const revealDurationSeconds = quiz.revealDurationSeconds || 4;
 
     // 1. Play Word Voice at start (t = 0.2s)
     if (wordBuffer) {
@@ -343,6 +434,21 @@ class AudioEngine {
     if (exampleBuffer) {
       this.playAudioBuffer(exampleBuffer, revealTime + 0.6);
     }
+
+    // 6. Interactive Engagement Question transition SFX & Vietnamese Voice
+    const voiceText = (quiz.interactiveVoiceText || quiz.interactiveQuestion || '').trim();
+    const hasInteractive = quiz.enableInteractive !== false && !!voiceText;
+    if (hasInteractive) {
+      const interactiveStartTime = revealTime + revealDurationSeconds;
+      this.schedulePop(interactiveStartTime);
+      this.scheduleWhoosh(interactiveStartTime);
+
+      if (interactiveBuffer) {
+        const speed = quiz.interactiveVoiceSpeed || 1.05;
+        const detune = quiz.interactiveVoicePitch ? (quiz.interactiveVoicePitch - 1.0) * 800 : 0;
+        this.playAudioBuffer(interactiveBuffer, interactiveStartTime + 0.25, speed, detune);
+      }
+    }
   }
 
   /**
@@ -350,14 +456,15 @@ class AudioEngine {
    * 1. Word pronunciation voice (e.g. "GOODS") at t = 0.2s
    * 2. Tick-tock & Countdown beeps
    * 3. Ding chime at t = 5.0s
-   * 4. Example sentence voice (e.g. "The company produces high-tech goods.") at t = 5.6s
+   * 4. Example sentence voice at t = 5.6s
+   * 5. Interactive question transition chime at t = 9.0s
    */
   public async scheduleFullQuizAudioWithVoice(
     quiz: QuizItem,
     startTime: number
   ) {
-    const { wordBuffer, exampleBuffer } = await this.preloadQuizAudio(quiz);
-    this.scheduleQuizAudioDirect(quiz, startTime, wordBuffer, exampleBuffer);
+    const { wordBuffer, exampleBuffer, interactiveBuffer } = await this.preloadQuizAudio(quiz);
+    this.scheduleQuizAudioDirect(quiz, startTime, wordBuffer, exampleBuffer, interactiveBuffer);
   }
 
   // ==========================================
@@ -404,13 +511,15 @@ class AudioEngine {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = options.rate ?? 1.0;
       utterance.pitch = options.pitch ?? 1.0;
-      utterance.lang = options.lang ?? 'en-US';
+      const targetLang = options.lang ?? 'en-US';
+      utterance.lang = targetLang;
 
-      if (options.voiceURI) {
+      // Select matching voice
+      if (options.voiceURI && targetLang.startsWith('en')) {
         const found = this.voices.find(v => v.voiceURI === options.voiceURI);
         if (found) utterance.voice = found;
       } else {
-        const match = this.voices.find(v => v.lang.startsWith(utterance.lang) || v.lang === utterance.lang);
+        const match = this.voices.find(v => v.lang.startsWith(targetLang) || v.lang.replace('_', '-').startsWith(targetLang.slice(0, 2)));
         if (match) utterance.voice = match;
       }
 

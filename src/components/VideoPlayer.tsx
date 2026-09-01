@@ -50,15 +50,24 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [isExportingSingle, setIsExportingSingle] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
 
+  const [interactiveBufferDuration, setInteractiveBufferDuration] = useState<number>(0);
+
   const countdownTotal = quiz.countdownSeconds || 5;
   const revealDuration = quiz.revealDurationSeconds || 4;
-  const totalDuration = countdownTotal + revealDuration;
+  const hasInteractive = quiz.enableInteractive !== false && !!(quiz.interactiveQuestion || quiz.interactiveVoiceText)?.trim();
+  const speed = quiz.interactiveVoiceSpeed || 1.05;
+  const effectiveVoiceDuration = interactiveBufferDuration > 0 ? (interactiveBufferDuration / speed) : 0;
+  const minVoiceDuration = effectiveVoiceDuration > 0 ? Math.ceil(effectiveVoiceDuration + 0.8) : 0;
+  const configuredInteractive = quiz.interactiveDurationSeconds || 4;
+  const interactiveDuration = hasInteractive ? Math.max(configuredInteractive, minVoiceDuration) : 0;
+  const totalDuration = countdownTotal + revealDuration + interactiveDuration;
 
   // Track timeline flags
   const lastSecondRef = useRef<number>(-1);
   const wordSpokenRef = useRef<boolean>(false);
   const chimeTriggeredRef = useRef<boolean>(false);
   const exampleSpokenRef = useRef<boolean>(false);
+  const interactiveTriggeredRef = useRef<boolean>(false);
   const animationFrameId = useRef<number | null>(null);
   const lastTimestampRef = useRef<number | null>(null);
 
@@ -68,7 +77,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       const renderer = new VideoRenderer(canvasRef.current, themeId);
       renderer.setDimensions(1080, 1920);
       rendererRef.current = renderer;
-      renderer.renderFrame(quiz, currentTime);
+      renderer.renderFrame(quiz, currentTime, isVip);
     }
   }, [themeId]);
 
@@ -76,20 +85,27 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   useEffect(() => {
     if (rendererRef.current) {
       rendererRef.current.setTheme(themeId);
-      rendererRef.current.renderFrame(quiz, currentTime);
+      rendererRef.current.renderFrame(quiz, currentTime, isVip);
     }
-  }, [themeId, quiz, currentTime]);
+  }, [themeId, quiz, currentTime, isVip]);
 
   const wordBufferRef = useRef<AudioBuffer | null>(null);
   const exampleBufferRef = useRef<AudioBuffer | null>(null);
+  const interactiveBufferRef = useRef<AudioBuffer | null>(null);
 
   // Preload TTS Voice Buffers whenever quiz changes
   useEffect(() => {
     let isCancelled = false;
-    audioEngine.preloadQuizAudio(quiz).then(({ wordBuffer, exampleBuffer }) => {
+    audioEngine.preloadQuizAudio(quiz).then(({ wordBuffer, exampleBuffer, interactiveBuffer }) => {
       if (!isCancelled) {
         wordBufferRef.current = wordBuffer;
         exampleBufferRef.current = exampleBuffer;
+        interactiveBufferRef.current = interactiveBuffer;
+        if (interactiveBuffer?.duration) {
+          setInteractiveBufferDuration(interactiveBuffer.duration);
+        } else {
+          setInteractiveBufferDuration(0);
+        }
       }
     });
     return () => {
@@ -191,6 +207,29 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           }
         }
 
+        // 5. Interactive Question Transition & Voice (t = countdownTotal + revealDuration)
+        const interactiveStart = countdownTotal + revealDuration;
+        const voiceText = (quiz.interactiveVoiceText || quiz.interactiveQuestion || '').trim();
+        if (hasInteractive && next >= interactiveStart && !interactiveTriggeredRef.current) {
+          interactiveTriggeredRef.current = true;
+          audioEngine.playPop();
+          audioEngine.playWhoosh();
+          if (autoSpeak && voiceText) {
+            if (interactiveBufferRef.current) {
+              const speed = quiz.interactiveVoiceSpeed || 1.05;
+              const detune = quiz.interactiveVoicePitch ? (quiz.interactiveVoicePitch - 1.0) * 800 : 0;
+              audioEngine.playAudioBuffer(interactiveBufferRef.current, 0, speed, detune);
+            } else {
+              audioEngine.speak(voiceText, {
+                voiceURI,
+                rate: (quiz.interactiveVoiceSpeed || 1.05) * speechRate,
+                pitch: (quiz.interactiveVoicePitch || 1.0) * speechPitch,
+                lang: 'vi-VN',
+              });
+            }
+          }
+        }
+
         return next;
       });
 
@@ -208,6 +247,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     isPlaying,
     totalDuration,
     countdownTotal,
+    revealDuration,
+    hasInteractive,
     autoSpeak,
     voiceURI,
     speechRate,
@@ -236,6 +277,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     wordSpokenRef.current = false;
     chimeTriggeredRef.current = false;
     exampleSpokenRef.current = false;
+    interactiveTriggeredRef.current = false;
     audioEngine.stopSpeaking();
     setCurrentTime(0);
     setIsPlaying(true);
@@ -248,6 +290,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     wordSpokenRef.current = val >= 0.1;
     chimeTriggeredRef.current = val >= countdownTotal;
     exampleSpokenRef.current = val >= countdownTotal + 0.6;
+    interactiveTriggeredRef.current = val >= (countdownTotal + revealDuration);
     lastSecondRef.current = Math.floor(val);
   };
 
@@ -257,10 +300,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     audioEngine.setMute(nextMuted);
   };
 
-  // Export single video with Word + Example Voice + Sound FX
+  // Export single video with Word + Example Voice + Sound FX (Off-screen render)
   const handleExportSingle = async () => {
-    if (!rendererRef.current) return;
-
     if (!isVip) {
       const quota = licenseManager.canExport(1);
       if (!quota.allowed) {
@@ -269,9 +310,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       }
     }
 
+    // Stop current live playback if playing
+    if (isPlaying) {
+      setIsPlaying(false);
+      audioEngine.stopSpeaking();
+    }
+
     setIsExportingSingle(true);
     setExportProgress(0);
-    setIsPlaying(false);
+
+    // Mute speaker output during recording so background sounds don't disturb the user
+    audioEngine.setSpeakerMutedForExport(true);
 
     try {
       const audioCtx = audioEngine.getAudioContext();
@@ -279,19 +328,34 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         await audioCtx.resume();
       }
 
-      // 1. Preload voice AudioBuffers first (Zero delay during recording)
-      const { wordBuffer, exampleBuffer } = await audioEngine.preloadQuizAudio(quiz);
+      // 1. Create a dedicated OFF-SCREEN canvas attached offscreen to DOM
+      // Attaching to DOM ensures Chromium's compositor continuously renders all video frames without throttling
+      const offscreenCanvas = document.createElement('canvas');
+      offscreenCanvas.width = 1080;
+      offscreenCanvas.height = 1920;
+      offscreenCanvas.style.position = 'fixed';
+      offscreenCanvas.style.left = '-99999px';
+      offscreenCanvas.style.top = '-99999px';
+      offscreenCanvas.style.opacity = '0';
+      offscreenCanvas.style.pointerEvents = 'none';
+      document.body.appendChild(offscreenCanvas);
 
-      // 2. Schedule audio and start video export at the EXACT same timestamp
+      let exportRenderer: VideoRenderer | null = new VideoRenderer(offscreenCanvas, themeId);
+
+      // 2. Preload voice AudioBuffers first (Zero delay during recording)
+      const { wordBuffer, exampleBuffer, interactiveBuffer } = await audioEngine.preloadQuizAudio(quiz);
+
+      // 3. Schedule audio and start video export at the EXACT same timestamp
       const startTime = audioCtx.currentTime + 0.05;
-      audioEngine.scheduleQuizAudioDirect(quiz, startTime, wordBuffer, exampleBuffer);
+      audioEngine.scheduleQuizAudioDirect(quiz, startTime, wordBuffer, exampleBuffer, interactiveBuffer);
 
       const audioStream = audioEngine.getAudioStream();
-      const videoBlob = await rendererRef.current.exportVideo(
+      const videoBlob = await exportRenderer.exportVideo(
         quiz,
         audioStream,
         (progress) => setExportProgress(progress),
-        isVip
+        isVip,
+        interactiveBuffer?.duration
       );
 
       const url = URL.createObjectURL(videoBlob);
@@ -306,6 +370,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     } catch (err) {
       console.error('Lỗi khi xuất video:', err);
     } finally {
+      const existingCanvas = document.querySelector('canvas[style*="-99999px"]');
+      if (existingCanvas && existingCanvas.parentNode) {
+        existingCanvas.parentNode.removeChild(existingCanvas);
+      }
+      audioEngine.setSpeakerMutedForExport(false);
       setIsExportingSingle(false);
     }
   };
@@ -369,8 +438,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         <div className="space-y-1">
           <div className="flex justify-between text-[11px] font-mono text-slate-400">
             <span className="text-sky-400 font-semibold">{currentTime.toFixed(1)}s</span>
-            <span className="text-slate-500">Kết quả ở: {countdownTotal}s</span>
-            <span>{totalDuration.toFixed(1)}s</span>
+            <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+              <span className="text-emerald-400">Đáp án: {countdownTotal}s</span>
+              {hasInteractive && (
+                <>
+                  <span>•</span>
+                  <span className="text-amber-400">Hỏi: {countdownTotal + revealDuration}s</span>
+                </>
+              )}
+            </div>
+            <span className="font-semibold text-slate-200">{totalDuration.toFixed(1)}s</span>
           </div>
           <input
             type="range"

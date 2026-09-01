@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { QuizItem } from '../types/quiz';
-import { Plus, Trash2, Copy, Sparkles, CheckCircle2, Clock, BookOpen, Layers } from 'lucide-react';
+import { Plus, Trash2, Copy, Sparkles, CheckCircle2, Clock, BookOpen, Layers, Volume2, Mic, Eye, Loader2 } from 'lucide-react';
+import { audioEngine } from '../services/audioEngine';
 
 interface VisualEditorProps {
   quizList: QuizItem[];
@@ -21,6 +22,7 @@ export const VisualEditor: React.FC<VisualEditorProps> = ({
   onDuplicateQuiz,
   onDeleteQuiz,
 }) => {
+  const [isPlayingVoice, setIsPlayingVoice] = useState(false);
   const current = quizList[currentIndex] || quizList[0];
   if (!current) return null;
 
@@ -491,6 +493,379 @@ export const VisualEditor: React.FC<VisualEditorProps> = ({
               />
             </div>
           </div>
+        </div>
+
+        {/* Interactive Audience Question Section (Call to Action / Viral Engagement) */}
+        <div className="space-y-3 pt-3 border-t border-slate-800">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs font-bold text-amber-300">
+              <BookOpen className="w-4 h-4 text-amber-400" />
+              <span>💬 Câu Hỏi Tương Tác Khán Giả (Tăng Bình Luận / Viral Video)</span>
+            </div>
+
+            <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-300">
+              <input
+                type="checkbox"
+                checked={current.enableInteractive !== false && (!!current.interactiveQuestion || !!current.interactiveVoiceText || current.enableInteractive === true)}
+                onChange={(e) => {
+                  const enabled = e.target.checked;
+                  const word = current.word || 'từ này';
+                  onUpdateQuiz({
+                    ...current,
+                    enableInteractive: enabled,
+                    interactiveQuestion: enabled ? (current.interactiveQuestion || `Vậy "${word}" tiếng Anh là gì?`) : current.interactiveQuestion,
+                    interactiveVoiceText: enabled ? (current.interactiveVoiceText || `Vậy câu "${word}" tiếng Anh là gì? Bạn hãy bình luận đáp án bên dưới nhé!`) : current.interactiveVoiceText,
+                    interactivePrompt: current.interactivePrompt || 'Bình luận đáp án của bạn bên dưới nhé! 👇',
+                    interactiveDurationSeconds: current.interactiveDurationSeconds || 4,
+                  });
+                }}
+                className="w-4 h-4 rounded text-amber-500 bg-slate-800 border-slate-700 focus:ring-amber-500 cursor-pointer"
+              />
+              <span className="text-amber-400 font-bold">Bật hỏi khán giả</span>
+            </label>
+          </div>
+
+          {(current.enableInteractive !== false && (!!current.interactiveQuestion || !!current.interactiveVoiceText || current.enableInteractive === true)) && (
+            <div className="p-4 rounded-2xl bg-amber-950/20 border border-amber-500/30 space-y-4 shadow-lg">
+              {/* Quick Template Presets */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] text-amber-200/90">
+                  <span className="font-semibold flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Mẫu câu hỏi tương tác nhanh (Tự điền cả Text + Voice):
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const wordName = current.word || 'từ này';
+                      onUpdateQuiz({
+                        ...current,
+                        interactiveQuestion: `Vậy "${wordName}" tiếng Anh là gì?`,
+                        interactiveVoiceText: `Vậy câu "${wordName}" tiếng Anh là gì? Hãy bình luận đáp án của bạn bên dưới nhé!`,
+                        interactivePrompt: current.interactivePrompt || 'Bình luận đáp án của bạn bên dưới nhé! 👇',
+                      });
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-[11px] font-medium transition-colors cursor-pointer"
+                  >
+                    🎯 Dịch câu sang TA
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const wordName = current.word || 'từ này';
+                      onUpdateQuiz({
+                        ...current,
+                        interactiveQuestion: `Từ đồng nghĩa của "${wordName}" là gì?`,
+                        interactiveVoiceText: `Bạn còn biết từ đồng nghĩa nào khác của từ "${wordName}" không? Hãy chia sẻ ở phần bình luận nhé!`,
+                        interactivePrompt: current.interactivePrompt || 'Chia sẻ câu trả lời của bạn nào! 💬',
+                      });
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-[11px] font-medium transition-colors cursor-pointer"
+                  >
+                    💡 Tìm từ đồng nghĩa
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const wordName = current.word || 'từ này';
+                      onUpdateQuiz({
+                        ...current,
+                        interactiveQuestion: `Hãy đặt 1 câu với từ "${wordName}"`,
+                        interactiveVoiceText: `Bạn hãy thử đặt một câu tiếng Anh hoàn chỉnh với từ "${wordName}" nhé!`,
+                        interactivePrompt: current.interactivePrompt || 'Thử tài comment câu của bạn bên dưới! ✍️',
+                      });
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-[11px] font-medium transition-colors cursor-pointer"
+                  >
+                    ✍️ Đặt câu ví dụ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onUpdateQuiz({
+                        ...current,
+                        interactiveQuestion: `Điền vào chỗ trống: "She bought some fresh ___"`,
+                        interactiveVoiceText: `Hãy điền từ thích hợp vào chỗ trống và comment đáp án đúng của bạn nào!`,
+                        interactivePrompt: current.interactivePrompt || 'Comment đáp án đúng của bạn nào! 🎯',
+                      });
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-[11px] font-medium transition-colors cursor-pointer"
+                  >
+                    ❓ Điền vào chỗ trống
+                  </button>
+                </div>
+              </div>
+
+              {/* 1. Text to display on screen */}
+              <div className="space-y-1.5 p-3 rounded-xl bg-slate-950/80 border border-slate-800">
+                <label className="text-xs font-bold text-sky-300 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Eye className="w-3.5 h-3.5 text-sky-400" />
+                    <span>1. Text hiển thị trên màn hình Video (Display Text):</span>
+                  </span>
+                  <span className="text-[11px] text-slate-400 font-normal">Chữ to rõ trên video</span>
+                </label>
+                <textarea
+                  rows={2}
+                  value={current.interactiveQuestion || ''}
+                  onChange={(e) => handleFieldChange('interactiveQuestion', e.target.value)}
+                  placeholder="VD: Vậy 'Cho tôi mượn' tiếng Anh là gì?"
+                  className="w-full bg-slate-900 border border-sky-500/40 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-sky-400 resize-none font-semibold"
+                />
+              </div>
+
+              {/* 2. Text to speak (Voice TTS) */}
+              <div className="space-y-1.5 p-3 rounded-xl bg-slate-950/80 border border-slate-800">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                    <Mic className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>2. Nội dung Voice Tiếng Việt đọc thành tiếng (TTS Audio):</span>
+                  </label>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleFieldChange('interactiveVoiceText', current.interactiveQuestion || '');
+                      }}
+                      className="text-[10px] text-slate-400 hover:text-sky-300 underline cursor-pointer"
+                      title="Lấy nội dung từ ô hiển thị sang ô đọc voice"
+                    >
+                      ⚡ Sao chép từ Text hiển thị
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isPlayingVoice}
+                      onClick={async () => {
+                        const text = (current.interactiveVoiceText || current.interactiveQuestion || '').trim();
+                        if (!text) return;
+                        setIsPlayingVoice(true);
+                        try {
+                          const buf = await audioEngine.getVoiceAudioBuffer(text, 'vi');
+                          const speed = current.interactiveVoiceSpeed || 1.05;
+                          const detune = current.interactiveVoicePitch ? (current.interactiveVoicePitch - 1.0) * 800 : 0;
+                          if (buf) {
+                            audioEngine.playAudioBuffer(buf, 0, speed, detune);
+                            const effectiveDuration = (buf.duration / speed) * 1000;
+                            setTimeout(() => setIsPlayingVoice(false), Math.max(1500, effectiveDuration));
+                          } else {
+                            await audioEngine.speak(text, {
+                              lang: 'vi-VN',
+                              rate: speed,
+                              pitch: current.interactiveVoicePitch || 1.0,
+                            });
+                            setIsPlayingVoice(false);
+                          }
+                        } catch {
+                          setIsPlayingVoice(false);
+                        }
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold transition-all disabled:opacity-50 cursor-pointer"
+                    >
+                      {isPlayingVoice ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin text-emerald-300" />
+                          <span>Đang đọc...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Volume2 className="w-3 h-3 text-emerald-400" />
+                          <span>Nghe thử Voice</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <textarea
+                  rows={2}
+                  value={current.interactiveVoiceText || ''}
+                  onChange={(e) => handleFieldChange('interactiveVoiceText', e.target.value)}
+                  placeholder="VD: Vậy câu cho tôi mượn tiếng Anh là gì? Bạn hãy bình luận đáp án của mình bên dưới nhé!"
+                  className="w-full bg-slate-900 border border-emerald-500/40 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-emerald-400 resize-none font-medium"
+                />
+
+                {/* Voice Speed & Style Controls */}
+                <div className="pt-2.5 border-t border-slate-800/80 space-y-2.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                    {/* Voice Speed Control */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-emerald-300 font-semibold flex items-center gap-1">
+                          ⚡ Tốc độ đọc Voice:
+                        </span>
+                        <span className="font-bold text-amber-400 bg-amber-950/60 px-2 py-0.5 rounded-md border border-amber-500/30 text-[11px]">
+                          {current.interactiveVoiceSpeed || 1.05}x
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.8"
+                        max="1.5"
+                        step="0.05"
+                        value={current.interactiveVoiceSpeed || 1.05}
+                        onChange={(e) => handleFieldChange('interactiveVoiceSpeed', parseFloat(e.target.value))}
+                        className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                      />
+                      {/* Speed Presets */}
+                      <div className="flex flex-wrap gap-1">
+                        {[
+                          { label: '0.9x Chậm', val: 0.9 },
+                          { label: '1.0x Chuẩn', val: 1.0 },
+                          { label: '1.15x Nhanh', val: 1.15 },
+                          { label: '1.3x TikTok', val: 1.3 },
+                        ].map((p) => (
+                          <button
+                            key={p.val}
+                            type="button"
+                            onClick={() => handleFieldChange('interactiveVoiceSpeed', p.val)}
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-medium transition-all ${
+                              (current.interactiveVoiceSpeed || 1.05) === p.val
+                                ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-400/50'
+                                : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                            }`}
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Voice Pitch / Tone Style */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-emerald-300 font-semibold flex items-center gap-1">
+                          🎭 Tông giọng & Phong cách:
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          {(current.interactiveVoicePitch || 1.0) > 1.04 ? 'Trong trẻo' : (current.interactiveVoicePitch || 1.0) < 0.96 ? 'Trầm ấm' : 'Tự nhiên'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onUpdateQuiz({
+                              ...current,
+                              interactiveVoiceStyle: 'standard',
+                              interactiveVoiceSpeed: 1.05,
+                              interactiveVoicePitch: 1.0,
+                            });
+                          }}
+                          className={`p-1.5 rounded-lg border text-[10px] font-medium text-left transition-all ${
+                            (!current.interactiveVoiceStyle || current.interactiveVoiceStyle === 'standard') && (!current.interactiveVoicePitch || current.interactiveVoicePitch === 1.0)
+                              ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-300'
+                              : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          🌸 Nữ chuẩn
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onUpdateQuiz({
+                              ...current,
+                              interactiveVoiceStyle: 'viral',
+                              interactiveVoiceSpeed: 1.15,
+                              interactiveVoicePitch: 1.08,
+                            });
+                          }}
+                          className={`p-1.5 rounded-lg border text-[10px] font-medium text-left transition-all ${
+                            current.interactiveVoiceStyle === 'viral' || current.interactiveVoicePitch === 1.08
+                              ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-300'
+                              : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          ⚡ Sôi nổi / Viral
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onUpdateQuiz({
+                              ...current,
+                              interactiveVoiceStyle: 'deep',
+                              interactiveVoiceSpeed: 0.95,
+                              interactiveVoicePitch: 0.92,
+                            });
+                          }}
+                          className={`p-1.5 rounded-lg border text-[10px] font-medium text-left transition-all ${
+                            current.interactiveVoiceStyle === 'deep' || current.interactiveVoicePitch === 0.92
+                              ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-300'
+                              : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          🎙️ Trầm ấm
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onUpdateQuiz({
+                              ...current,
+                              interactiveVoiceStyle: 'fast',
+                              interactiveVoiceSpeed: 1.25,
+                              interactiveVoicePitch: 1.10,
+                            });
+                          }}
+                          className={`p-1.5 rounded-lg border text-[10px] font-medium text-left transition-all ${
+                            current.interactiveVoiceStyle === 'fast' || current.interactiveVoicePitch === 1.10
+                              ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-300'
+                              : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          🚀 Thách đố nhanh
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Prompt CTA & Duration Slider */}
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+                <div className="sm:col-span-7 space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-300">
+                    Lời kêu gọi hành động (Call To Action dưới khung):
+                  </label>
+                  <input
+                    type="text"
+                    value={current.interactivePrompt || ''}
+                    onChange={(e) => handleFieldChange('interactivePrompt', e.target.value)}
+                    placeholder="VD: Bình luận đáp án của bạn bên dưới nhé! 👇"
+                    className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-amber-400"
+                  />
+                </div>
+
+                <div className="sm:col-span-5 space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-300">Thời lượng hỏi tối thiểu:</span>
+                    <span className="font-bold text-amber-400">{current.interactiveDurationSeconds || 5} giây</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="3"
+                    max="12"
+                    step="1"
+                    value={current.interactiveDurationSeconds || 5}
+                    onChange={(e) => handleFieldChange('interactiveDurationSeconds', parseInt(e.target.value))}
+                    className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                  />
+                  <div className="text-[10px] text-slate-400 text-right">
+                    (Tự động mở rộng nếu câu voice dài hơn)
+                  </div>
+                </div>
+              </div>
+
+              {/* Explanation tip */}
+              <div className="text-[11px] text-amber-300/80 bg-amber-950/40 border border-amber-500/20 rounded-xl p-2.5 flex items-start gap-2">
+                <span className="text-sm">💡</span>
+                <span>
+                  <strong>Tự động khớp thời lượng Voice:</strong> Hệ thống tự động đo độ dài thực tế của câu Voice tiếng Việt để video không bao giờ bị ngắt lời giữa chừng, đảm bảo người xem nghe trọn vẹn 100% câu hỏi và lời kêu gọi!
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

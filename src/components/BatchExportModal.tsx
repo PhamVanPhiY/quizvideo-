@@ -67,58 +67,73 @@ export const BatchExportModal: React.FC<BatchExportModalProps> = ({
 
     setIsExporting(true);
     setCompletedCount(0);
+    audioEngine.setSpeakerMutedForExport(true);
 
-    // Create off-screen canvas for rendering
-    const offscreenCanvas = document.createElement('canvas');
-    offscreenCanvas.width = 1080;
-    offscreenCanvas.height = 1920;
-    const renderer = new VideoRenderer(offscreenCanvas, themeId);
+    try {
+      // Create off-screen canvas attached to DOM (off-screen) for continuous rendering
+      const offscreenCanvas = document.createElement('canvas');
+      offscreenCanvas.width = 1080;
+      offscreenCanvas.height = 1920;
+      offscreenCanvas.style.position = 'fixed';
+      offscreenCanvas.style.left = '-99999px';
+      offscreenCanvas.style.top = '-99999px';
+      offscreenCanvas.style.opacity = '0';
+      offscreenCanvas.style.pointerEvents = 'none';
+      document.body.appendChild(offscreenCanvas);
 
-    const audioStream = audioEngine.getAudioStream();
+      const renderer = new VideoRenderer(offscreenCanvas, themeId);
+      const audioStream = audioEngine.getAudioStream();
 
-    for (let i = 0; i < toExport.length; i++) {
-      const item = toExport[i];
-      setCurrentExportIndex(i + 1);
-      setCurrentProgress(0);
+      for (let i = 0; i < toExport.length; i++) {
+        const item = toExport[i];
+        setCurrentExportIndex(i + 1);
+        setCurrentProgress(0);
 
-      try {
-        const audioCtx = audioEngine.getAudioContext();
-        if (audioCtx.state === 'suspended') {
-          await audioCtx.resume();
+        try {
+          const audioCtx = audioEngine.getAudioContext();
+          if (audioCtx.state === 'suspended') {
+            await audioCtx.resume();
+          }
+
+          // Preload voice AudioBuffers first
+          const { wordBuffer, exampleBuffer, interactiveBuffer } = await audioEngine.preloadQuizAudio(item);
+
+          const startTime = audioCtx.currentTime + 0.05;
+          audioEngine.scheduleQuizAudioDirect(item, startTime, wordBuffer, exampleBuffer, interactiveBuffer);
+
+          const videoBlob = await renderer.exportVideo(
+            item,
+            audioStream,
+            (progress) => {
+              setCurrentProgress(progress);
+            },
+            isVip,
+            interactiveBuffer?.duration
+          );
+
+          // Trigger download
+          const url = URL.createObjectURL(videoBlob);
+          const a = document.createElement('a');
+          a.href = url;
+          const cleanWord = (item.word || 'quiz').replace(/[^a-zA-Z0-9]/g, '_');
+          a.download = `Shorts_Quiz_${String(i + 1).padStart(2, '0')}_${cleanWord}.webm`;
+          a.click();
+          URL.revokeObjectURL(url);
+
+          licenseManager.recordExport(1);
+          setCompletedCount(prev => prev + 1);
+        } catch (err) {
+          console.error('Lỗi khi xuất video:', err);
         }
-
-        // Preload voice AudioBuffers first
-        const { wordBuffer, exampleBuffer } = await audioEngine.preloadQuizAudio(item);
-
-        const startTime = audioCtx.currentTime + 0.05;
-        audioEngine.scheduleQuizAudioDirect(item, startTime, wordBuffer, exampleBuffer);
-
-        const videoBlob = await renderer.exportVideo(
-          item,
-          audioStream,
-          (progress) => {
-            setCurrentProgress(progress);
-          },
-          isVip
-        );
-
-        // Trigger download
-        const url = URL.createObjectURL(videoBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        const cleanWord = (item.word || 'quiz').replace(/[^a-zA-Z0-9]/g, '_');
-        a.download = `Shorts_Quiz_${String(i + 1).padStart(2, '0')}_${cleanWord}.webm`;
-        a.click();
-        URL.revokeObjectURL(url);
-
-        licenseManager.recordExport(1);
-        setCompletedCount(prev => prev + 1);
-      } catch (err) {
-        console.error('Lỗi khi xuất video:', err);
       }
+    } finally {
+      const existingCanvas = document.querySelector('canvas[style*="-99999px"]');
+      if (existingCanvas && existingCanvas.parentNode) {
+        existingCanvas.parentNode.removeChild(existingCanvas);
+      }
+      audioEngine.setSpeakerMutedForExport(false);
+      setIsExporting(false);
     }
-
-    setIsExporting(false);
   };
 
   const selectedCount = selectedIds.size;
