@@ -80,12 +80,21 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   }, [themeId, quiz, currentTime]);
 
+  const wordBufferRef = useRef<AudioBuffer | null>(null);
+  const exampleBufferRef = useRef<AudioBuffer | null>(null);
+
   // Preload TTS Voice Buffers whenever quiz changes
   useEffect(() => {
-    audioEngine.getVoiceAudioBuffer(quiz.word, 'en');
-    if (quiz.example) {
-      audioEngine.getVoiceAudioBuffer(quiz.example, 'en');
-    }
+    let isCancelled = false;
+    audioEngine.preloadQuizAudio(quiz).then(({ wordBuffer, exampleBuffer }) => {
+      if (!isCancelled) {
+        wordBufferRef.current = wordBuffer;
+        exampleBufferRef.current = exampleBuffer;
+      }
+    });
+    return () => {
+      isCancelled = true;
+    };
   }, [quiz]);
 
   // Handle Confetti Burst on reveal
@@ -131,11 +140,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         if (next >= 0.1 && !wordSpokenRef.current) {
           wordSpokenRef.current = true;
           if (autoSpeak) {
-            audioEngine.speak(quiz.word, {
-              voiceURI,
-              rate: speechRate,
-              pitch: speechPitch,
-            });
+            if (wordBufferRef.current) {
+              audioEngine.playAudioBuffer(wordBufferRef.current);
+            } else {
+              audioEngine.speak(quiz.word, {
+                voiceURI,
+                rate: speechRate,
+                pitch: speechPitch,
+              });
+            }
           }
         }
 
@@ -165,12 +178,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         if (next >= countdownTotal + 0.6 && !exampleSpokenRef.current) {
           exampleSpokenRef.current = true;
           if (autoSpeak && (quiz.example || quiz.explanation)) {
-            const textToSpeak = quiz.example || quiz.explanation;
-            audioEngine.speak(textToSpeak, {
-              voiceURI,
-              rate: speechRate,
-              pitch: speechPitch,
-            });
+            if (exampleBufferRef.current) {
+              audioEngine.playAudioBuffer(exampleBufferRef.current);
+            } else {
+              const textToSpeak = quiz.example || quiz.explanation;
+              audioEngine.speak(textToSpeak, {
+                voiceURI,
+                rate: speechRate,
+                pitch: speechPitch,
+              });
+            }
           }
         }
 

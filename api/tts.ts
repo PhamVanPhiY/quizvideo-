@@ -15,8 +15,14 @@ export default async function handler(request: Request) {
     });
   }
 
+  // Clean markdown symbols, quotes, and brackets for flawless pronunciation
+  const cleanText = text
+    .replace(/[*_#`~[\](){}"]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
   try {
-    const targetUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text.trim())}&tl=${lang}&client=tw-ob`;
+    const targetUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cleanText)}&tl=${lang || 'en'}&client=tw-ob`;
     const res = await fetch(targetUrl, {
       headers: {
         'Referer': 'https://translate.google.com/',
