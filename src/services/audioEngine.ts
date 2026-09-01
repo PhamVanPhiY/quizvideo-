@@ -72,20 +72,45 @@ class AudioEngine {
       return this.audioBufferCache.get(cacheKey)!;
     }
 
-    try {
-      const ctx = this.initContext();
-      const res = await fetch(`/api/tts?text=${encodeURIComponent(cleanText)}&lang=${lang}`);
-      if (!res.ok) throw new Error('TTS proxy response not OK');
+    const ctx = this.initContext();
 
-      const arrayBuffer = await res.arrayBuffer();
-      // Decode audio data into Web Audio buffer
-      const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
-      this.audioBufferCache.set(cacheKey, audioBuffer);
-      return audioBuffer;
-    } catch {
-      // Fallback: Return null if offline or fetch failed (will use Web Speech for preview)
-      return null;
+    // Strategy 1: Serverless proxy /api/tts
+    try {
+      const res = await fetch(`/api/tts?text=${encodeURIComponent(cleanText)}&lang=${lang}`);
+      if (res.ok) {
+        const arrayBuffer = await res.arrayBuffer();
+        const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
+        this.audioBufferCache.set(cacheKey, audioBuffer);
+        return audioBuffer;
+      }
+    } catch (e) {
+      console.warn('TTS proxy failed, attempting secondary dictionary fallback...', e);
     }
+
+    // Strategy 2: Free Dictionary Audio API (For single word pronunciation)
+    if (cleanText.split(/\s+/).length === 1) {
+      try {
+        const dictRes = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(cleanText)}`);
+        if (dictRes.ok) {
+          const dictData = await dictRes.json();
+          const phonetics = dictData?.[0]?.phonetics || [];
+          const audioUrl = phonetics.find((p: { audio?: string }) => p.audio && p.audio.endsWith('.mp3'))?.audio;
+          if (audioUrl) {
+            const audioRes = await fetch(audioUrl);
+            if (audioRes.ok) {
+              const arrayBuffer = await audioRes.arrayBuffer();
+              const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
+              this.audioBufferCache.set(cacheKey, audioBuffer);
+              return audioBuffer;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Dictionary audio fallback failed:', err);
+      }
+    }
+
+    return null;
   }
 
   public playAudioBuffer(buffer: AudioBuffer, startTime: number = 0): AudioBufferSourceNode | null {
