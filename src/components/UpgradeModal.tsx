@@ -81,19 +81,43 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({ isOpen, onClose }) =
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  const handleActivateCode = (e: React.FormEvent) => {
+  const handleActivateCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activationCode.trim()) return;
+    const code = activationCode.trim();
+    if (!code) return;
 
-    const res = licenseManager.activateCode(activationCode);
+    // 1. Check static secret codes (PHI2026, VIP50K, etc.)
+    const res = licenseManager.activateCode(code);
     if (res.success) {
       setCodeMessage({ text: res.message, isError: false });
       setTimeout(() => {
         onClose();
       }, 1800);
-    } else {
-      setCodeMessage({ text: res.message, isError: true });
+      return;
     }
+
+    // 2. Check if code is a transfer memo on SePay (e.g. QUIZ8190)
+    if (code.toUpperCase().startsWith('QUIZ') || code.length >= 4) {
+      setCodeMessage({ text: 'Đang tra cứu giao dịch SePay...', isError: false });
+      try {
+        const sepayRes = await sePayService.checkPaymentStatus(code, planAmount);
+        if (sepayRes.paid && sepayRes.transaction) {
+          licenseManager.activateDirectVip('lifetime');
+          setCodeMessage({
+            text: `🎉 Đã tìm thấy giao dịch chuyển khoản ${Number(sepayRes.transaction.amount_in).toLocaleString('vi-VN')}đ! Đã kích hoạt VIP Pro!`,
+            isError: false,
+          });
+          setTimeout(() => {
+            onClose();
+          }, 1800);
+          return;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    setCodeMessage({ text: res.message, isError: true });
   };
 
   const handleResetToFree = () => {

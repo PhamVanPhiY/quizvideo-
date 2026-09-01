@@ -65,19 +65,43 @@ class SePayService {
     transaction?: SePayTransaction;
   }> {
     const cleanCode = orderCode.trim().toUpperCase();
-    const transactions = await this.fetchRecentTransactions();
+    if (!cleanCode) return { paid: false };
 
-    for (const tx of transactions) {
-      const amount = typeof tx.amount_in === 'string' ? parseFloat(tx.amount_in) : tx.amount_in;
-      const content = (tx.transaction_content || '').toUpperCase();
-
-      // Check if transaction content contains orderCode and amount >= minAmount
-      if (amount >= minAmount && content.includes(cleanCode)) {
-        return {
-          paid: true,
-          transaction: tx,
-        };
+    // Method 1: Use Vercel Serverless Proxy (Zero CORS limitation, 100% Reliable)
+    try {
+      const res = await fetch(`/api/sepay?code=${encodeURIComponent(cleanCode)}&minAmount=${minAmount}`, {
+        method: 'GET',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.paid && data.transaction) {
+          return {
+            paid: true,
+            transaction: data.transaction,
+          };
+        }
       }
+    } catch (err) {
+      console.warn('Proxy check error, attempting direct fallback...', err);
+    }
+
+    // Method 2: Direct fetch fallback
+    try {
+      const transactions = await this.fetchRecentTransactions();
+      for (const tx of transactions) {
+        const amount = typeof tx.amount_in === 'string' ? parseFloat(tx.amount_in) : tx.amount_in;
+        const content = (tx.transaction_content || '').toUpperCase();
+
+        if (amount >= minAmount && content.includes(cleanCode)) {
+          return {
+            paid: true,
+            transaction: tx,
+          };
+        }
+      }
+    } catch {
+      // ignore
     }
 
     return { paid: false };
