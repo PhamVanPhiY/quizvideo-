@@ -43,6 +43,24 @@ export const App: React.FC = () => {
   const currentQuiz = quizList[currentIndex] || quizList[0] || SAMPLE_QUIZ_LIST[0];
   const remainingExports = licenseManager.getRemainingExportsToday();
 
+  // Load custom branding from localStorage on initial load
+  useEffect(() => {
+    try {
+      const savedBranding = localStorage.getItem('quizvideo_branding');
+      if (savedBranding) {
+        const parsed = JSON.parse(savedBranding);
+        if (parsed && typeof parsed === 'object') {
+          setQuizList((prev) =>
+            prev.map((q) => ({
+              ...q,
+              ...parsed,
+            }))
+          );
+        }
+      }
+    } catch {}
+  }, []);
+
   // Handlers for Visual Editor
   const handleUpdateQuiz = (updated: QuizItem) => {
     setQuizList((prev) => {
@@ -52,15 +70,31 @@ export const App: React.FC = () => {
     });
   };
 
+  // Sync Channel Branding (Logo, Name, Position, Shape, Size) across ALL quiz items
+  const handleUpdateAllBranding = (brandingUpdates: Partial<QuizItem>) => {
+    setQuizList((prev) =>
+      prev.map((q) => ({
+        ...q,
+        ...brandingUpdates,
+      }))
+    );
+    try {
+      const existing = JSON.parse(localStorage.getItem('quizvideo_branding') || '{}');
+      localStorage.setItem('quizvideo_branding', JSON.stringify({ ...existing, ...brandingUpdates }));
+    } catch {}
+  };
+
   const handleAddQuiz = () => {
     const newId = `quiz-${Date.now()}`;
     const newQuiz: QuizItem = {
       id: newId,
       channelName: currentQuiz.channelName || 'BIN HỌC TIẾNG ANH',
       channelLogo: currentQuiz.channelLogo,
-      logoPosition: currentQuiz.logoPosition,
-      logoShape: currentQuiz.logoShape,
-      logoSize: currentQuiz.logoSize,
+      logoPosition: currentQuiz.logoPosition || 'top-left',
+      logoShape: currentQuiz.logoShape || 'circle',
+      logoSize: currentQuiz.logoSize || 115,
+      logoOpacity: currentQuiz.logoOpacity,
+      showLogoText: currentQuiz.showLogoText !== false,
       category: 'TỪ VỰNG MỚI',
       word: 'NEW WORD',
       ipa: '/n/a/',
@@ -114,12 +148,40 @@ export const App: React.FC = () => {
   };
 
   const handleApplyJson = (newList: QuizItem[]) => {
-    setQuizList(newList);
+    // Preserve active branding if available
+    const activeBranding: Partial<QuizItem> = {};
+    if (currentQuiz.channelName) activeBranding.channelName = currentQuiz.channelName;
+    if (currentQuiz.channelLogo) activeBranding.channelLogo = currentQuiz.channelLogo;
+    if (currentQuiz.logoPosition) activeBranding.logoPosition = currentQuiz.logoPosition;
+    if (currentQuiz.logoShape) activeBranding.logoShape = currentQuiz.logoShape;
+    if (currentQuiz.logoSize) activeBranding.logoSize = currentQuiz.logoSize;
+    if (currentQuiz.logoOpacity !== undefined) activeBranding.logoOpacity = currentQuiz.logoOpacity;
+    if (currentQuiz.showLogoText !== undefined) activeBranding.showLogoText = currentQuiz.showLogoText;
+
+    const merged = newList.map((q) => ({
+      ...q,
+      ...activeBranding,
+    }));
+    setQuizList(merged);
     setCurrentIndex(0);
   };
 
   const handleApplyTopicFromLibrary = (questions: QuizItem[]) => {
-    setQuizList(questions);
+    // Preserve active branding if available
+    const activeBranding: Partial<QuizItem> = {};
+    if (currentQuiz.channelName) activeBranding.channelName = currentQuiz.channelName;
+    if (currentQuiz.channelLogo) activeBranding.channelLogo = currentQuiz.channelLogo;
+    if (currentQuiz.logoPosition) activeBranding.logoPosition = currentQuiz.logoPosition;
+    if (currentQuiz.logoShape) activeBranding.logoShape = currentQuiz.logoShape;
+    if (currentQuiz.logoSize) activeBranding.logoSize = currentQuiz.logoSize;
+    if (currentQuiz.logoOpacity !== undefined) activeBranding.logoOpacity = currentQuiz.logoOpacity;
+    if (currentQuiz.showLogoText !== undefined) activeBranding.showLogoText = currentQuiz.showLogoText;
+
+    const merged = questions.map((q) => ({
+      ...q,
+      ...activeBranding,
+    }));
+    setQuizList(merged);
     setCurrentIndex(0);
   };
 
@@ -213,6 +275,7 @@ export const App: React.FC = () => {
               currentIndex={currentIndex}
               onSelectIndex={setCurrentIndex}
               onUpdateQuiz={handleUpdateQuiz}
+              onUpdateAllBranding={handleUpdateAllBranding}
               onAddQuiz={handleAddQuiz}
               onDuplicateQuiz={handleDuplicateQuiz}
               onDeleteQuiz={handleDeleteQuiz}

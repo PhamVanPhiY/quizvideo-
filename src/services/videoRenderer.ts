@@ -418,13 +418,27 @@ export class VideoRenderer {
    * @param quiz Current Quiz Item
    * @param currentTime Current progress time in seconds (0.0 to totalDuration)
    * @param isVip Whether user has VIP Pro (removes watermark)
+   * @param exampleBufferDuration Optional duration of preloaded example voice
+   * @param interactiveBufferDuration Optional duration of preloaded interactive voice
    */
-  public renderFrame(quiz: QuizItem, currentTime: number, isVip: boolean = false) {
+  public renderFrame(
+    quiz: QuizItem,
+    currentTime: number,
+    isVip: boolean = false,
+    exampleBufferDuration?: number,
+    _interactiveBufferDuration?: number
+  ) {
     this.updateParticles();
     this.drawBackground();
 
     const countdownTotal = quiz.countdownSeconds || 5;
-    const revealDuration = quiz.revealDurationSeconds || 4;
+    const exampleDuration = (exampleBufferDuration !== undefined && exampleBufferDuration > 0)
+      ? exampleBufferDuration
+      : ((quiz.example || quiz.explanation) ? ((quiz.example || quiz.explanation)!.trim().length / 13) : 0);
+    const minRevealForExample = exampleDuration > 0 ? Math.ceil(0.6 + exampleDuration + 1.0) : 0;
+    const configuredReveal = quiz.revealDurationSeconds || 4;
+    const revealDuration = Math.max(configuredReveal, minRevealForExample);
+
     const hasInteractive = quiz.enableInteractive !== false && !!(quiz.interactiveQuestion || quiz.interactiveVoiceText)?.trim();
     const isInteractiveStage = hasInteractive && currentTime >= (countdownTotal + revealDuration);
 
@@ -1021,17 +1035,24 @@ export class VideoRenderer {
     audioStream: MediaStream | null,
     onProgress: (progress: number) => void,
     isVip: boolean = false,
-    interactiveBufferDuration?: number
+    interactiveBufferDuration?: number,
+    exampleBufferDuration?: number
   ): Promise<Blob> {
     const countdown = quiz.countdownSeconds || 5;
-    const reveal = quiz.revealDurationSeconds || 4;
+    const exampleDuration = (exampleBufferDuration !== undefined && exampleBufferDuration > 0)
+      ? exampleBufferDuration
+      : ((quiz.example || quiz.explanation) ? ((quiz.example || quiz.explanation)!.trim().length / 13) : 0);
+    const minRevealForExample = exampleDuration > 0 ? Math.ceil(0.6 + exampleDuration + 1.0) : 0;
+    const configuredReveal = quiz.revealDurationSeconds || 4;
+    const reveal = Math.max(configuredReveal, minRevealForExample);
+
     const hasInteractive = quiz.enableInteractive !== false && !!(quiz.interactiveQuestion || quiz.interactiveVoiceText)?.trim();
     const speed = quiz.interactiveVoiceSpeed || 1.05;
     const effectiveVoiceDuration = interactiveBufferDuration && interactiveBufferDuration > 0
       ? (interactiveBufferDuration / speed)
-      : 0;
+      : ((quiz.interactiveVoiceText || quiz.interactiveQuestion) ? ((quiz.interactiveVoiceText || quiz.interactiveQuestion)!.trim().length / 14) : 0);
     const minVoiceDuration = effectiveVoiceDuration > 0
-      ? Math.ceil(effectiveVoiceDuration + 0.8)
+      ? Math.ceil(effectiveVoiceDuration + 1.0)
       : 0;
     const configuredInteractive = quiz.interactiveDurationSeconds || 4;
     const interactive = hasInteractive ? Math.max(configuredInteractive, minVoiceDuration) : 0;
@@ -1086,7 +1107,7 @@ export class VideoRenderer {
       };
 
       // Pre-render frame 0
-      this.renderFrame(quiz, 0, isVip);
+      this.renderFrame(quiz, 0, isVip, exampleBufferDuration, interactiveBufferDuration);
 
       // Start recording
       mediaRecorder.start(100);
@@ -1099,7 +1120,7 @@ export class VideoRenderer {
         const elapsedMs = now - startTime;
         const currentTime = Math.min(totalDuration, elapsedMs / 1000);
 
-        this.renderFrame(quiz, currentTime, isVip);
+        this.renderFrame(quiz, currentTime, isVip, exampleBufferDuration, interactiveBufferDuration);
         if ((videoTrack as any)?.requestFrame) {
           try { (videoTrack as any).requestFrame(); } catch {}
         }
@@ -1111,7 +1132,7 @@ export class VideoRenderer {
           requestAnimationFrame(recordStep);
         } else {
           // Final frame render
-          this.renderFrame(quiz, totalDuration, isVip);
+          this.renderFrame(quiz, totalDuration, isVip, exampleBufferDuration, interactiveBufferDuration);
           if ((videoTrack as any)?.requestFrame) {
             try { (videoTrack as any).requestFrame(); } catch {}
           }

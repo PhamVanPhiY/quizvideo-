@@ -50,14 +50,23 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [isExportingSingle, setIsExportingSingle] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
 
+  const [exampleBufferDuration, setExampleBufferDuration] = useState<number>(0);
   const [interactiveBufferDuration, setInteractiveBufferDuration] = useState<number>(0);
 
   const countdownTotal = quiz.countdownSeconds || 5;
-  const revealDuration = quiz.revealDurationSeconds || 4;
+  const configuredReveal = quiz.revealDurationSeconds || 4;
+  const exampleEffectiveDuration = exampleBufferDuration > 0
+    ? exampleBufferDuration
+    : ((quiz.example || quiz.explanation) ? ((quiz.example || quiz.explanation)!.trim().length / 13) : 0);
+  const minRevealForExample = exampleEffectiveDuration > 0 ? Math.ceil(0.6 + exampleEffectiveDuration + 1.0) : 0;
+  const revealDuration = Math.max(configuredReveal, minRevealForExample);
+
   const hasInteractive = quiz.enableInteractive !== false && !!(quiz.interactiveQuestion || quiz.interactiveVoiceText)?.trim();
   const speed = quiz.interactiveVoiceSpeed || 1.05;
-  const effectiveVoiceDuration = interactiveBufferDuration > 0 ? (interactiveBufferDuration / speed) : 0;
-  const minVoiceDuration = effectiveVoiceDuration > 0 ? Math.ceil(effectiveVoiceDuration + 0.8) : 0;
+  const effectiveVoiceDuration = interactiveBufferDuration > 0
+    ? (interactiveBufferDuration / speed)
+    : ((quiz.interactiveVoiceText || quiz.interactiveQuestion) ? ((quiz.interactiveVoiceText || quiz.interactiveQuestion)!.trim().length / 14) : 0);
+  const minVoiceDuration = effectiveVoiceDuration > 0 ? Math.ceil(effectiveVoiceDuration + 1.0) : 0;
   const configuredInteractive = quiz.interactiveDurationSeconds || 4;
   const interactiveDuration = hasInteractive ? Math.max(configuredInteractive, minVoiceDuration) : 0;
   const totalDuration = countdownTotal + revealDuration + interactiveDuration;
@@ -77,7 +86,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       const renderer = new VideoRenderer(canvasRef.current, themeId);
       renderer.setDimensions(1080, 1920);
       rendererRef.current = renderer;
-      renderer.renderFrame(quiz, currentTime, isVip);
+      renderer.renderFrame(quiz, currentTime, isVip, exampleBufferDuration, interactiveBufferDuration);
     }
   }, [themeId]);
 
@@ -85,9 +94,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   useEffect(() => {
     if (rendererRef.current) {
       rendererRef.current.setTheme(themeId);
-      rendererRef.current.renderFrame(quiz, currentTime, isVip);
+      rendererRef.current.renderFrame(quiz, currentTime, isVip, exampleBufferDuration, interactiveBufferDuration);
     }
-  }, [themeId, quiz, currentTime, isVip]);
+  }, [themeId, quiz, currentTime, isVip, exampleBufferDuration, interactiveBufferDuration]);
 
   const wordBufferRef = useRef<AudioBuffer | null>(null);
   const exampleBufferRef = useRef<AudioBuffer | null>(null);
@@ -101,11 +110,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         wordBufferRef.current = wordBuffer;
         exampleBufferRef.current = exampleBuffer;
         interactiveBufferRef.current = interactiveBuffer;
-        if (interactiveBuffer?.duration) {
-          setInteractiveBufferDuration(interactiveBuffer.duration);
-        } else {
-          setInteractiveBufferDuration(0);
-        }
+        setExampleBufferDuration(exampleBuffer?.duration || 0);
+        setInteractiveBufferDuration(interactiveBuffer?.duration || 0);
       }
     });
     return () => {
@@ -183,7 +189,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           }
         }
 
-        // 3. Chime and Celebration at 5s (Reveal)
+        // 3. Chime and Celebration at reveal
         if (next >= countdownTotal && !chimeTriggeredRef.current) {
           chimeTriggeredRef.current = true;
           audioEngine.playCorrectChime();
@@ -207,7 +213,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           }
         }
 
-        // 5. Interactive Question Transition & Voice (t = countdownTotal + revealDuration)
+        // 5. Interactive Question Transition & Voice (ONLY after countdownTotal + revealDuration)
         const interactiveStart = countdownTotal + revealDuration;
         const voiceText = (quiz.interactiveVoiceText || quiz.interactiveQuestion || '').trim();
         if (hasInteractive && next >= interactiveStart && !interactiveTriggeredRef.current) {
@@ -260,9 +266,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   // Render on frame update
   useEffect(() => {
     if (rendererRef.current) {
-      rendererRef.current.renderFrame(quiz, currentTime, isVip);
+      rendererRef.current.renderFrame(quiz, currentTime, isVip, exampleBufferDuration, interactiveBufferDuration);
     }
-  }, [quiz, currentTime, isVip]);
+  }, [quiz, currentTime, isVip, exampleBufferDuration, interactiveBufferDuration]);
 
   const handlePlayPause = () => {
     if (currentTime >= totalDuration) {
@@ -347,7 +353,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
       // 3. Schedule audio and start video export at the EXACT same timestamp
       const startTime = audioCtx.currentTime + 0.05;
-      audioEngine.scheduleQuizAudioDirect(quiz, startTime, wordBuffer, exampleBuffer, interactiveBuffer);
+      audioEngine.scheduleQuizAudioDirect(quiz, startTime, wordBuffer, exampleBuffer, interactiveBuffer, revealDuration);
 
       const audioStream = audioEngine.getAudioStream();
       const videoBlob = await exportRenderer.exportVideo(
@@ -355,7 +361,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         audioStream,
         (progress) => setExportProgress(progress),
         isVip,
-        interactiveBuffer?.duration
+        interactiveBuffer?.duration,
+        exampleBuffer?.duration
       );
 
       const url = URL.createObjectURL(videoBlob);

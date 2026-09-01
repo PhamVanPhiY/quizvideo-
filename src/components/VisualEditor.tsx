@@ -8,29 +8,53 @@ interface VisualEditorProps {
   currentIndex: number;
   onSelectIndex: (index: number) => void;
   onUpdateQuiz: (updated: QuizItem) => void;
+  onUpdateAllBranding?: (branding: Partial<QuizItem>) => void;
   onAddQuiz: () => void;
   onDuplicateQuiz: (index: number) => void;
   onDeleteQuiz: (index: number) => void;
 }
+
+const BRANDING_KEYS = [
+  'channelName',
+  'channelLogo',
+  'logoPosition',
+  'logoShape',
+  'logoSize',
+  'logoOpacity',
+  'showLogoText',
+] as const;
 
 export const VisualEditor: React.FC<VisualEditorProps> = ({
   quizList,
   currentIndex,
   onSelectIndex,
   onUpdateQuiz,
+  onUpdateAllBranding,
   onAddQuiz,
   onDuplicateQuiz,
   onDeleteQuiz,
 }) => {
   const [isPlayingVoice, setIsPlayingVoice] = useState(false);
+  const [isPlayingExampleVoice, setIsPlayingExampleVoice] = useState(false);
   const current = quizList[currentIndex] || quizList[0];
   if (!current) return null;
 
   const handleFieldChange = <K extends keyof QuizItem>(key: K, value: QuizItem[K]) => {
-    onUpdateQuiz({
-      ...current,
-      [key]: value,
-    });
+    if (BRANDING_KEYS.includes(key as any)) {
+      if (onUpdateAllBranding) {
+        onUpdateAllBranding({ [key]: value });
+      } else {
+        onUpdateQuiz({
+          ...current,
+          [key]: value,
+        });
+      }
+    } else {
+      onUpdateQuiz({
+        ...current,
+        [key]: value,
+      });
+    }
   };
 
   const handleOptionChange = (optIndex: number, text: string) => {
@@ -144,44 +168,30 @@ export const VisualEditor: React.FC<VisualEditorProps> = ({
 
         {/* Channel Logo / Avatar Customization */}
         <div className="p-4 rounded-2xl bg-slate-950/80 border border-sky-500/30 space-y-3.5 shadow-lg">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-bold text-sky-300 flex items-center gap-1.5">
-              <span>🖼️ Logo / Avatar Bản Quyền Kênh (Góc Trên Trái):</span>
-            </label>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="text-xs font-bold text-sky-300 flex items-center gap-1.5">
+                <span>🖼️ Logo / Avatar Bản Quyền Kênh (Góc Trên Trái):</span>
+              </label>
+              <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Tự động áp dụng cho tất cả {quizList.length} câu
+              </span>
+            </div>
 
             {current.channelLogo && (
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    // Bulk apply logo settings to all questions
-                    quizList.forEach((q, idx) => {
-                      if (idx !== currentIndex) {
-                        onUpdateQuiz({
-                          ...q,
-                          channelLogo: current.channelLogo,
-                          logoPosition: current.logoPosition || 'top-left',
-                          logoShape: current.logoShape || 'circle',
-                          logoSize: current.logoSize || 115,
-                          showLogoText: current.showLogoText !== false,
-                        });
-                      }
-                    });
-                  }}
-                  className="text-[11px] text-sky-400 hover:text-sky-300 font-bold underline"
-                  title="Áp dụng logo và cài đặt này cho tất cả câu hỏi trong danh sách"
-                >
-                  Áp dụng cho tất cả câu
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleFieldChange('channelLogo', undefined)}
-                  className="text-[11px] text-rose-400 hover:text-rose-300 font-semibold"
-                >
-                  Xóa Logo
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onUpdateAllBranding) {
+                    onUpdateAllBranding({ channelLogo: undefined });
+                  } else {
+                    handleFieldChange('channelLogo', undefined);
+                  }
+                }}
+                className="text-[11px] text-rose-400 hover:text-rose-300 font-semibold"
+              >
+                Xóa Logo
+              </button>
             )}
           </div>
 
@@ -221,9 +231,20 @@ export const VisualEditor: React.FC<VisualEditorProps> = ({
                         const reader = new FileReader();
                         reader.onload = (event) => {
                           if (event.target?.result) {
-                            handleFieldChange('channelLogo', event.target.result as string);
-                            if (!current.logoSize) handleFieldChange('logoSize', 115);
-                            if (!current.logoPosition) handleFieldChange('logoPosition', 'top-left');
+                            const logoData = event.target.result as string;
+                            if (onUpdateAllBranding) {
+                              onUpdateAllBranding({
+                                channelLogo: logoData,
+                                logoSize: current.logoSize || 115,
+                                logoPosition: current.logoPosition || 'top-left',
+                                logoShape: current.logoShape || 'circle',
+                                showLogoText: current.showLogoText !== false,
+                              });
+                            } else {
+                              handleFieldChange('channelLogo', logoData);
+                              if (!current.logoSize) handleFieldChange('logoSize', 115);
+                              if (!current.logoPosition) handleFieldChange('logoPosition', 'top-left');
+                            }
                           }
                         };
                         reader.readAsDataURL(file);
@@ -415,27 +436,32 @@ export const VisualEditor: React.FC<VisualEditorProps> = ({
           <div className="space-y-1">
             <div className="flex justify-between text-xs">
               <span className="text-slate-300 flex items-center gap-1">
-                <Clock className="w-3.5 h-3.5 text-emerald-400" /> Thời gian xem kết quả:
+                <Clock className="w-3.5 h-3.5 text-emerald-400" /> Thời gian xem kết quả (tối thiểu):
               </span>
               <span className="font-bold text-emerald-400">{current.revealDurationSeconds || 4} giây</span>
             </div>
             <input
               type="range"
               min="2"
-              max="8"
+              max="15"
               step="1"
               value={current.revealDurationSeconds || 4}
               onChange={(e) => handleFieldChange('revealDurationSeconds', parseInt(e.target.value))}
               className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
             />
+            <div className="text-[10px] text-slate-400 text-right">
+              (Tự động mở rộng nếu câu ví dụ dài hơn, không lo bị cắt tiếng)
+            </div>
           </div>
         </div>
 
         {/* Post-Reveal Note, Explanation & Example */}
         <div className="space-y-3 pt-2 border-t border-slate-800">
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
-            <BookOpen className="w-4 h-4 text-amber-400" />
-            <span>Phần Giải Thích Sau 5s (Note & Ví Dụ)</span>
+          <div className="flex items-center justify-between text-xs font-bold text-slate-200">
+            <div className="flex items-center gap-2">
+              <BookOpen className="w-4 h-4 text-amber-400" />
+              <span>Phần Giải Thích Sau 5s (Note & Ví Dụ)</span>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -468,9 +494,47 @@ export const VisualEditor: React.FC<VisualEditorProps> = ({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-300">
-                Câu Ví Dụ Tiếng Anh (Example):
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                  <span>Câu Ví Dụ Tiếng Anh (Example):</span>
+                </label>
+
+                <button
+                  type="button"
+                  disabled={isPlayingExampleVoice}
+                  onClick={async () => {
+                    const text = (current.example || current.explanation || '').trim();
+                    if (!text) return;
+                    setIsPlayingExampleVoice(true);
+                    try {
+                      const buf = await audioEngine.getVoiceAudioBuffer(text, 'en');
+                      if (buf) {
+                        audioEngine.playAudioBuffer(buf);
+                        setTimeout(() => setIsPlayingExampleVoice(false), Math.max(1500, buf.duration * 1000));
+                      } else {
+                        await audioEngine.speak(text, { lang: 'en-US' });
+                        setIsPlayingExampleVoice(false);
+                      }
+                    } catch {
+                      setIsPlayingExampleVoice(false);
+                    }
+                  }}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-300 text-[10px] font-bold transition-all disabled:opacity-50 cursor-pointer"
+                  title="Nghe thử giọng đọc câu ví dụ tiếng Anh"
+                >
+                  {isPlayingExampleVoice ? (
+                    <>
+                      <Loader2 className="w-2.5 h-2.5 animate-spin text-sky-300" />
+                      <span>Đang đọc...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Volume2 className="w-2.5 h-2.5 text-sky-400" />
+                      <span>Nghe thử Voice</span>
+                    </>
+                  )}
+                </button>
+              </div>
               <input
                 type="text"
                 value={current.example || ''}

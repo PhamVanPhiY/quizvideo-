@@ -108,7 +108,8 @@ export const BatchExportModal: React.FC<BatchExportModalProps> = ({
               setCurrentProgress(progress);
             },
             isVip,
-            interactiveBuffer?.duration
+            interactiveBuffer?.duration,
+            exampleBuffer?.duration
           );
 
           // Trigger download

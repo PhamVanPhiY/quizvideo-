@@ -87,6 +87,47 @@ class AudioEngine {
   // (Zero API Key - Direct AudioBuffer for MediaRecorder & Playback)
   // ==========================================
 
+  private async fetchSingleVoiceChunk(text: string, lang: string, ctx: AudioContext): Promise<AudioBuffer | null> {
+    const cleanChunk = text.trim();
+    if (!cleanChunk) return null;
+
+    // Strategy 1: Serverless proxy /api/tts
+    try {
+      const res = await fetch(`/api/tts?text=${encodeURIComponent(cleanChunk)}&lang=${lang}`);
+      if (res.ok) {
+        const arrayBuffer = await res.arrayBuffer();
+        const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
+        return audioBuffer;
+      }
+    } catch (e) {
+      console.warn('TTS proxy chunk failed, attempting secondary dictionary fallback...', e);
+    }
+
+    // Strategy 2: Free Dictionary Audio API (For single word pronunciation)
+    if (cleanChunk.split(/\s+/).length === 1) {
+      try {
+        const dictRes = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(cleanChunk)}`);
+        if (dictRes.ok) {
+          const dictData = await dictRes.json();
+          const phonetics = dictData?.[0]?.phonetics || [];
+          const audioUrl = phonetics.find((p: { audio?: string }) => p.audio && p.audio.endsWith('.mp3'))?.audio;
+          if (audioUrl) {
+            const audioRes = await fetch(audioUrl);
+            if (audioRes.ok) {
+              const arrayBuffer = await audioRes.arrayBuffer();
+              const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
+              return audioBuffer;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Dictionary audio fallback failed:', err);
+      }
+    }
+
+    return null;
+  }
+
   public async getVoiceAudioBuffer(text: string, lang: string = 'en'): Promise<AudioBuffer | null> {
     let cleanText = text.trim();
     if (!cleanText) return null;
@@ -106,43 +147,112 @@ class AudioEngine {
 
     const ctx = this.initContext();
 
-    // Strategy 1: Serverless proxy /api/tts
-    try {
-      const res = await fetch(`/api/tts?text=${encodeURIComponent(cleanText)}&lang=${lang}`);
-      if (res.ok) {
-        const arrayBuffer = await res.arrayBuffer();
-        const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
-        this.audioBufferCache.set(cacheKey, audioBuffer);
-        return audioBuffer;
+    // If text is within Google TTS safe limit (<= 140 chars), fetch directly
+    if (cleanText.length <= 140) {
+      const singleBuffer = await this.fetchSingleVoiceChunk(cleanText, lang, ctx);
+      if (singleBuffer) {
+        this.audioBufferCache.set(cacheKey, singleBuffer);
+        return singleBuffer;
       }
-    } catch (e) {
-      console.warn('TTS proxy failed, attempting secondary dictionary fallback...', e);
+      return null;
     }
 
-    // Strategy 2: Free Dictionary Audio API (For single word pronunciation)
-    if (cleanText.split(/\s+/).length === 1) {
-      try {
-        const dictRes = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(cleanText)}`);
-        if (dictRes.ok) {
-          const dictData = await dictRes.json();
-          const phonetics = dictData?.[0]?.phonetics || [];
-          const audioUrl = phonetics.find((p: { audio?: string }) => p.audio && p.audio.endsWith('.mp3'))?.audio;
-          if (audioUrl) {
-            const audioRes = await fetch(audioUrl);
-            if (audioRes.ok) {
-              const arrayBuffer = await audioRes.arrayBuffer();
-              const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
-              this.audioBufferCache.set(cacheKey, audioBuffer);
-              return audioBuffer;
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('Dictionary audio fallback failed:', err);
-      }
+    // For longer sentences (> 140 chars), split into natural chunks by sentences/clauses
+    const chunks = this.splitTextIntoChunks(cleanText, 130);
+    const bufferPromises = chunks.map((chunk) => this.fetchSingleVoiceChunk(chunk, lang, ctx));
+    const buffers = await Promise.all(bufferPromises);
+
+    const validBuffers = buffers.filter((b): b is AudioBuffer => b !== null);
+    if (validBuffers.length === 0) return null;
+
+    const mergedBuffer = this.concatAudioBuffers(ctx, validBuffers);
+    if (mergedBuffer) {
+      this.audioBufferCache.set(cacheKey, mergedBuffer);
+      return mergedBuffer;
     }
 
     return null;
+  }
+
+  private splitTextIntoChunks(text: string, maxChunkLength: number = 130): string[] {
+    const clean = text.trim();
+    if (clean.length <= maxChunkLength) return [clean];
+
+    const sentences = clean.split(/(?<=[.!?;\n])\s+/);
+    const chunks: string[] = [];
+    let currentChunk = '';
+
+    for (const sentence of sentences) {
+      if ((currentChunk + ' ' + sentence).trim().length <= maxChunkLength) {
+        currentChunk = (currentChunk + ' ' + sentence).trim();
+      } else {
+        if (currentChunk) {
+          chunks.push(currentChunk);
+          currentChunk = '';
+        }
+        if (sentence.length <= maxChunkLength) {
+          currentChunk = sentence;
+        } else {
+          const clauses = sentence.split(/(?<=[,])\s+/);
+          for (const clause of clauses) {
+            if ((currentChunk + ' ' + clause).trim().length <= maxChunkLength) {
+              currentChunk = (currentChunk + ' ' + clause).trim();
+            } else {
+              if (currentChunk) {
+                chunks.push(currentChunk);
+                currentChunk = '';
+              }
+              if (clause.length <= maxChunkLength) {
+                currentChunk = clause;
+              } else {
+                const words = clause.split(/\s+/);
+                for (const word of words) {
+                  if ((currentChunk + ' ' + word).trim().length <= maxChunkLength) {
+                    currentChunk = (currentChunk + ' ' + word).trim();
+                  } else {
+                    if (currentChunk) chunks.push(currentChunk);
+                    currentChunk = word;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (currentChunk) {
+      chunks.push(currentChunk);
+    }
+
+    return chunks.filter((c) => c.length > 0);
+  }
+
+  private concatAudioBuffers(ctx: AudioContext, buffers: AudioBuffer[]): AudioBuffer | null {
+    const validBuffers = buffers.filter(Boolean);
+    if (validBuffers.length === 0) return null;
+    if (validBuffers.length === 1) return validBuffers[0];
+
+    const numChannels = Math.max(...validBuffers.map((b) => b.numberOfChannels));
+    const sampleRate = validBuffers[0].sampleRate;
+    const totalLength = validBuffers.reduce((acc, b) => acc + b.length, 0);
+
+    const mergedBuffer = ctx.createBuffer(numChannels, totalLength, sampleRate);
+
+    for (let channel = 0; channel < numChannels; channel++) {
+      const channelData = mergedBuffer.getChannelData(channel);
+      let offset = 0;
+      for (const buffer of validBuffers) {
+        if (channel < buffer.numberOfChannels) {
+          channelData.set(buffer.getChannelData(channel), offset);
+        } else {
+          channelData.set(buffer.getChannelData(0), offset);
+        }
+        offset += buffer.length;
+      }
+    }
+
+    return mergedBuffer;
   }
 
   public playAudioBuffer(
@@ -400,10 +510,15 @@ class AudioEngine {
     startTime: number,
     wordBuffer: AudioBuffer | null,
     exampleBuffer: AudioBuffer | null,
-    interactiveBuffer: AudioBuffer | null = null
+    interactiveBuffer: AudioBuffer | null = null,
+    customRevealDuration?: number
   ) {
     const countdownSeconds = quiz.countdownSeconds || 5;
-    const revealDurationSeconds = quiz.revealDurationSeconds || 4;
+    const exampleDuration = exampleBuffer?.duration || 0;
+    // Auto-calculate required reveal time: 0.6s start delay + example audio length + 1.0s natural breathing room
+    const minRevealForExample = exampleDuration > 0 ? Math.ceil(0.6 + exampleDuration + 1.0) : 0;
+    const configuredReveal = quiz.revealDurationSeconds || 4;
+    const revealDurationSeconds = customRevealDuration || Math.max(configuredReveal, minRevealForExample);
 
     // 1. Play Word Voice at start (t = 0.2s)
     if (wordBuffer) {
@@ -436,6 +551,7 @@ class AudioEngine {
     }
 
     // 6. Interactive Engagement Question transition SFX & Vietnamese Voice
+    // Only triggers after revealDurationSeconds (ensures example sentence voice has fully finished)
     const voiceText = (quiz.interactiveVoiceText || quiz.interactiveQuestion || '').trim();
     const hasInteractive = quiz.enableInteractive !== false && !!voiceText;
     if (hasInteractive) {
@@ -455,9 +571,9 @@ class AudioEngine {
    * Schedule the entire Quiz Audio Track INCLUDING:
    * 1. Word pronunciation voice (e.g. "GOODS") at t = 0.2s
    * 2. Tick-tock & Countdown beeps
-   * 3. Ding chime at t = 5.0s
-   * 4. Example sentence voice at t = 5.6s
-   * 5. Interactive question transition chime at t = 9.0s
+   * 3. Ding chime at reveal
+   * 4. Example sentence voice at reveal + 0.6s
+   * 5. Interactive question transition chime & voice after example finishes
    */
   public async scheduleFullQuizAudioWithVoice(
     quiz: QuizItem,
