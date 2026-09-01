@@ -16,10 +16,15 @@ export default async function handler(request: Request) {
   }
 
   // Clean markdown symbols, quotes, and brackets for flawless pronunciation
-  const cleanText = text
+  let cleanText = text
     .replace(/[*_#`~[\](){}"]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+
+  // If text is ALL UPPERCASE (e.g. "GOODS", "DESSERT"), convert to lowercase so Google TTS pronounces it as a real English word rather than spelling out letters (G-O-O-D-S)!
+  if (cleanText === cleanText.toUpperCase() && /[A-Z]/.test(cleanText)) {
+    cleanText = cleanText.toLowerCase();
+  }
 
   try {
     const targetUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cleanText)}&tl=${lang || 'en'}&client=tw-ob`;

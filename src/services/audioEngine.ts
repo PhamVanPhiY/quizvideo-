@@ -64,8 +64,13 @@ class AudioEngine {
   // ==========================================
 
   public async getVoiceAudioBuffer(text: string, lang: string = 'en'): Promise<AudioBuffer | null> {
-    const cleanText = text.trim();
+    let cleanText = text.trim();
     if (!cleanText) return null;
+
+    // Convert ALL CAPS words (e.g. "GOODS") to lowercase so TTS pronounces it as a word rather than spelling out letters!
+    if (cleanText === cleanText.toUpperCase() && /[A-Z]/.test(cleanText)) {
+      cleanText = cleanText.toLowerCase();
+    }
 
     const cacheKey = `${lang}:${cleanText}`;
     if (this.audioBufferCache.has(cacheKey)) {
