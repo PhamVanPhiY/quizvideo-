@@ -96,14 +96,6 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({ isOpen, onClose }) =
     }
   };
 
-  const handleQuickDemoVip = () => {
-    licenseManager.activateDirectVip('lifetime');
-    setCodeMessage({ text: '🎉 Đã kích hoạt VIP Pro Trọn Đời thành công!', isError: false });
-    setTimeout(() => {
-      onClose();
-    }, 1200);
-  };
-
   const handleResetToFree = () => {
     licenseManager.resetToFree();
     setCodeMessage({ text: 'Đã chuyển về bản Free dùng thử', isError: false });
