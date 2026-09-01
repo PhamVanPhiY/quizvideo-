@@ -411,7 +411,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({ isOpen, onClose }) =
                           type="text"
                           value={activationCode}
                           onChange={(e) => setActivationCode(e.target.value)}
-                          placeholder="VD: PHI2026 hoặc VIP50K"
+                          placeholder="VD: VIP-XXXX-XXXX"
                           className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs font-mono uppercase text-sky-200 focus:outline-none focus:border-amber-400"
                         />
                         <button
@@ -442,32 +442,20 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({ isOpen, onClose }) =
                 )}
               </div>
 
-              {/* Demo Fast Unlock & Footer */}
+              {/* Secure Footer */}
               <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800">
                 <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
                   <ShieldCheck className="w-4 h-4 text-emerald-400" />
                   <span>Kích hoạt tự động & hỗ trợ 24/7</span>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleQuickDemoVip}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold transition-colors border border-slate-700"
-                    title="Kích hoạt nhanh cho kiểm thử demo"
-                  >
-                    <Zap className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Dùng Thử VIP Demo (1-Click)</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    className="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold"
-                  >
-                    Đóng
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-all"
+                >
+                  Đóng
+                </button>
               </div>
             </>
           )}
